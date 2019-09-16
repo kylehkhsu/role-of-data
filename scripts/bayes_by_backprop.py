@@ -18,10 +18,11 @@ np.random.seed(43)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 # hyperparameters
-batch_size = 1280
+batch_size = 128
 n_samples = 1
-n_epochs = 10
-learning_rate = 1e-3
+n_epochs = 100
+learning_rate = 0.1
+momentum = 0.9
 
 # Blundell: preprocess by dividing by 126. we divide by 255.
 
@@ -51,15 +52,12 @@ bnn = make_bnn_mlp(
 )
 bnn = bnn.to(device)
 
-# optim = torch.optim.SGD(
-#     bnn.parameters(),
-#     lr=learning_rate,
-# )
-
-optim = torch.optim.Adam(
+optim = torch.optim.SGD(
     bnn.parameters(),
-    lr=learning_rate
+    lr=learning_rate,
+    momentum=momentum
 )
+scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=25, gamma=0.2)
 
 
 def evaluate(loader):
@@ -95,12 +93,12 @@ for i_epoch in tqdm(range(n_epochs)):
     acc_train = evaluate(train_loader_eval)
     acc_val = evaluate(val_loader_eval)
 
+    # update lr
+    scheduler.step()
+
     print(f'epoch {i_epoch + 1}: acc_train {acc_train:.3f}, acc_val {acc_val:.3f}')
     print(f' kls: {np.mean(kls)}, \nlog_likelihoods: {np.mean(log_likelihoods)} '
           f'\nlosses: {np.mean(losses)}')
-
-
-
 
 ipdb.set_trace()
 

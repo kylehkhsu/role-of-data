@@ -135,7 +135,7 @@ class BNN(nn.Module):
     # TODO: double check
     @staticmethod
     def loss(kl, log_likelihood, dataset_size):
-        return 0*kl / dataset_size - log_likelihood
+        return kl / dataset_size - log_likelihood
 
 
 def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, W_prior_mean, W_prior_std, b_prior_mean, b_prior_std):
