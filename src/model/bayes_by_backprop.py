@@ -157,29 +157,3 @@ def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, W_prior_mean, W_prior_st
     )
 
     return BNN(*layers)
-
-
-if __name__ == '__main__':
-    layer = BNNLinearLayer(784, 600, 'relu', 0, 0.01, 0, 0)
-
-    z, kl = layer.forward(torch.randn((5, 784)))
-
-
-    def test_kl():
-        mean = torch.Tensor([3.0])
-        var = torch.Tensor([5.0])
-        zero = BNNLinearLayer.kl_between_gaussians(mean, var, mean, var)
-        assert zero.isclose(torch.Tensor([0]))
-
-        p_mean = torch.Tensor([3.0])
-        p_var = torch.Tensor([5.0])
-        q_mean = torch.Tensor([2.0])
-        q_var = torch.Tensor([3.0])
-        kl = BNNLinearLayer.kl_between_gaussians(
-            p_mean, p_var, q_mean, q_var
-        )
-        kl2 = torch.log(q_var.sqrt() / p_var.sqrt()) + (p_var + (p_mean - q_mean).pow(2)) / (2 * q_var) - 0.5
-        assert torch.isclose(kl, kl2)
-
-
-    test_kl()
