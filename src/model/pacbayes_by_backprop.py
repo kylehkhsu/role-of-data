@@ -22,10 +22,10 @@ class BNNLinearLayer(nn.Module):
 
         # randomly initialize, then center prior distributions around the initialization
         W_prior_mean = torch.empty([self.n_input, self.n_output])
-        nn.init.normal_(W_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+        nn.init.normal_(W_prior_mean, mean=0, std=prior_std).clamp_(min=-2*prior_std, max=2*prior_std)
 
         b_prior_mean = torch.empty([self.n_output])
-        nn.init.normal_(b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+        nn.init.normal_(b_prior_mean, mean=0, std=prior_std).clamp_(min=-2*prior_std, max=2*prior_std)
 
         self.W_mean = nn.Parameter(W_prior_mean)
         self.b_mean = nn.Parameter(b_prior_mean)
@@ -115,15 +115,19 @@ class BNN(nn.Module):
 
         running_kl = 0.0
         running_log_likelihood = 0.0
+        running_correct = 0.0
         for i in range(n_samples):
             probs, kl = self(x, 'forward')
 
             log_likelihood = probs.gather(1, y).clamp(min=self.min_prob, max=1).log().mean()
+            predictions = probs.argmax(dim=-1)
+            correct = (predictions == y.squeeze()).sum().float()
 
+            running_correct += correct
             running_kl += kl
             running_log_likelihood += log_likelihood
 
-        return running_kl / n_samples, running_log_likelihood / n_samples
+        return running_kl / n_samples, running_log_likelihood / n_samples, running_correct / n_samples
 
 
 def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob):
