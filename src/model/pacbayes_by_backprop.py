@@ -15,17 +15,18 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class BNNLinearLayer(nn.Module):
-    def __init__(self, n_input, n_output, activation, prior_std):
+    def __init__(self, n_input, n_output, activation, prior_std, reparam_trick):
         super(BNNLinearLayer, self).__init__()
         self.n_input = n_input
         self.n_output = n_output
+        self.reparam_trick = reparam_trick
 
         # randomly initialize, then center prior distributions around the initialization
         W_prior_mean = torch.empty([self.n_input, self.n_output])
-        nn.init.normal_(W_prior_mean, mean=0, std=prior_std).clamp_(min=-2*prior_std, max=2*prior_std)
+        nn.init.normal_(W_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
 
         b_prior_mean = torch.empty([self.n_output])
-        nn.init.normal_(b_prior_mean, mean=0, std=prior_std).clamp_(min=-2*prior_std, max=2*prior_std)
+        nn.init.normal_(b_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
 
         self.W_mean = nn.Parameter(W_prior_mean)
         self.b_mean = nn.Parameter(b_prior_mean)
@@ -48,26 +49,45 @@ class BNNLinearLayer(nn.Module):
             raise ValueError
 
     def forward(self, x, mode):
-        # uses the local reparameterization trick: https://arxiv.org/abs/1506.02557
+        assert mode in ['forward', 'MAP', 'MC']
         assert x.dim() == 2
         batch_size = x.shape[0]
 
-        assert mode in ['forward', 'MAP', 'MC']
+        if self.reparam_trick == 'local':
+            # uses the local reparameterization trick: https://arxiv.org/abs/1506.02557
 
-        z_mean = x.mm(self.W_mean) + self.b_mean
+            z_mean = x.mm(self.W_mean) + self.b_mean
 
-        if mode == 'MAP':
-            return self.activation(z_mean)
+            if mode == 'MAP':
+                return self.activation(z_mean)
 
-        # sample from standard normal independently for each example
-        z_noise = torch.randn([batch_size, self.n_output], requires_grad=False).to(device)
-        z_std = (x.pow(2).mm(F.softplus(self.W_rho).pow(2)) + F.softplus(self.b_rho).pow(2)).sqrt()
-        z = z_mean + z_std * z_noise
-        z = self.activation(z)
+            # sample from standard normal independently for each example
+            z_noise = torch.randn([batch_size, self.n_output], requires_grad=False).to(device)
+            z_std = (x.pow(2).mm(F.softplus(self.W_rho).pow(2)) + F.softplus(self.b_rho).pow(2)).sqrt()
+            z = z_mean + z_std * z_noise
+            z = self.activation(z)
 
-        if mode == 'MC':
-            return z
+            if mode == 'MC':
+                return z
 
+            return z, self.layer_kl()
+        elif self.reparam_trick == 'global':
+            if mode == 'MAP':
+                return self.activation(x.mm(self.W_mean) + self.b_mean)
+
+            # sample from standard normal once for the entire batch
+            W_noise = torch.randn(self.W_mean.shape, requires_grad=False).to(device)
+            b_noise = torch.randn(self.b_mean.shape, requires_grad=False).to(device)
+            W = self.W_mean + F.softplus(self.W_rho) * W_noise
+            b = self.b_mean + F.softplus(self.b_rho) * b_noise
+            z = x.mm(W) + b
+
+            if mode == 'MC':
+                return z
+
+            return z, self.layer_kl()
+
+    def layer_kl(self):
         # KL[q(w|\theta) || p(w)]
         W_kl = BNNLinearLayer.kl_between_gaussians(
             self.W_mean, F.softplus(self.W_rho).pow(2), self.W_prior_mean, self.W_prior_var
@@ -75,8 +95,7 @@ class BNNLinearLayer(nn.Module):
         b_kl = BNNLinearLayer.kl_between_gaussians(
             self.b_mean, F.softplus(self.b_rho).pow(2), self.b_prior_mean, self.b_prior_var
         )
-        layer_kl = W_kl.sum() + b_kl.sum()
-        return z, layer_kl
+        return W_kl.sum() + b_kl.sum()
 
     @staticmethod
     def kl_between_gaussians(p_mean, p_var, q_mean, q_var):
@@ -130,7 +149,7 @@ class BNN(nn.Module):
         return running_kl / n_samples, running_log_likelihood / n_samples, running_correct / n_samples
 
 
-def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob):
+def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, reparam_trick):
     layers = []
     n_in = n_input
     assert len(hidden_layer_sizes) > 0
@@ -138,13 +157,13 @@ def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob):
     for h in hidden_layer_sizes:
         layers.append(
             BNNLinearLayer(
-                n_in, h, 'relu', prior_std
+                n_in, h, 'relu', prior_std, reparam_trick
             )
         )
         n_in = h
     layers.append(
         BNNLinearLayer(
-            n_in, n_output, 'softmax', prior_std
+            n_in, n_output, 'softmax', prior_std, reparam_trick
         )
     )
 

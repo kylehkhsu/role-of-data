@@ -29,6 +29,7 @@ config_defaults = dict(
     hidden_layer_sizes=[600, 600],
     min_prob=1e-4,
     delta=0.05,
+    reparam_trick='global'
 )
 config = wandb.config
 config.update({k: v for k, v in config_defaults.items() if k not in dict(config.user_items())})
@@ -53,7 +54,8 @@ bnn = make_bnn_mlp(
     n_output=10,
     hidden_layer_sizes=config.hidden_layer_sizes,
     prior_std=math.sqrt(config.prior_var),
-    min_prob=config.min_prob
+    min_prob=config.min_prob,
+    reparam_trick=config.reparam_trick
 )
 wandb.watch(bnn)
 bnn = bnn.to(device)

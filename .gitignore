@@ -1,2 +1,3 @@
 .idea/
 wandb/
+run_slurm.sh
