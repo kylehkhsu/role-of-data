@@ -1,3 +1,4 @@
+# global reparameterization trick instead of local
 name: quad_bound_mnist_global_reparam
 program: scripts/pbmlp_mnist.py
 method: grid
@@ -8,8 +9,8 @@ parameters:
   momentum:
     values: [0.9, 0.95, 0.99]
   prior_var:
-    value: [0.003]
+    value: 0.003
   min_prob:
-    value: [!!float 1e-3]
+    value: !!float 1e-3
   n_epochs:
     value: 1024

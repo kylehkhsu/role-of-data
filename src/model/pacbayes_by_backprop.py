@@ -15,7 +15,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class BNNLinearLayer(nn.Module):
-    def __init__(self, n_input, n_output, activation, prior_std, reparam_trick):
+    def __init__(self, n_input, n_output, activation, prior_std, reparam_trick, config):
         super(BNNLinearLayer, self).__init__()
         self.n_input = n_input
         self.n_output = n_output
@@ -34,11 +34,27 @@ class BNNLinearLayer(nn.Module):
         self.register_buffer('W_prior_mean', W_prior_mean.clone().detach())
         self.register_buffer('b_prior_mean', b_prior_mean.clone().detach())
 
-        self.W_rho = nn.Parameter(torch.ones([self.n_input, self.n_output]) * std_to_rho(prior_std))
-        self.b_rho = nn.Parameter(torch.ones([self.n_output]) * std_to_rho(prior_std))
+        if config.covariance_init_strategy == 'isotropic':
+            self.W_rho = nn.Parameter(torch.ones([self.n_input, self.n_output]) * std_to_rho(prior_std))
+            self.b_rho = nn.Parameter(torch.ones([self.n_output]) * std_to_rho(prior_std))
 
-        self.register_buffer('W_prior_var', torch.Tensor([prior_std ** 2]))
-        self.register_buffer('b_prior_var', torch.Tensor([prior_std ** 2]))
+            self.register_buffer('W_prior_var', torch.Tensor([prior_std ** 2]))
+            self.register_buffer('b_prior_var', torch.Tensor([prior_std ** 2]))
+        elif config.covariance_init_strategy == 'diagonal':
+            # https://github.com/deepmind/sonnet/blob/master/sonnet/examples/brnn_ptb.py#L276
+            W_prior_rho = torch.empty([self.n_input, self.n_output])
+            nn.init.uniform_(W_prior_rho, a=std_to_rho(prior_std / 2.0), b=std_to_rho(prior_std))
+
+            b_prior_rho = torch.empty([self.n_output])
+            nn.init.uniform_(b_prior_rho, a=std_to_rho(prior_std / 2.0), b=std_to_rho(prior_std))
+            self.W_rho = nn.Parameter(W_prior_rho)
+            self.b_rho = nn.Parameter(b_prior_rho)
+
+            self.register_buffer('W_prior_var', F.softplus(W_prior_rho.clone().detach()).pow(2))
+            self.register_buffer('b_prior_var', F.softplus(b_prior_rho.clone().detach()).pow(2))
+
+        else:
+            raise ValueError
 
         self.activation = None
         if activation == 'relu':
@@ -80,7 +96,7 @@ class BNNLinearLayer(nn.Module):
             b_noise = torch.randn(self.b_mean.shape, requires_grad=False).to(device)
             W = self.W_mean + F.softplus(self.W_rho) * W_noise
             b = self.b_mean + F.softplus(self.b_rho) * b_noise
-            z = x.mm(W) + b
+            z = self.activation(x.mm(W) + b)
 
             if mode == 'MC':
                 return z
@@ -149,7 +165,7 @@ class BNN(nn.Module):
         return running_kl / n_samples, running_log_likelihood / n_samples, running_correct / n_samples
 
 
-def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, reparam_trick):
+def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, reparam_trick, config):
     layers = []
     n_in = n_input
     assert len(hidden_layer_sizes) > 0
@@ -157,13 +173,13 @@ def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, rep
     for h in hidden_layer_sizes:
         layers.append(
             BNNLinearLayer(
-                n_in, h, 'relu', prior_std, reparam_trick
+                n_in, h, 'relu', prior_std, reparam_trick, config
             )
         )
         n_in = h
     layers.append(
         BNNLinearLayer(
-            n_in, n_output, 'softmax', prior_std, reparam_trick
+            n_in, n_output, 'softmax', prior_std, reparam_trick, config
         )
     )
 

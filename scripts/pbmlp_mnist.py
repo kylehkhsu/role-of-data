@@ -11,7 +11,7 @@ from src.model.pacbayes_by_backprop import make_bnn_mlp
 
 from tqdm import tqdm
 
-wandb.init(project="pacbayes_opt", dir='/h/kylehsu/output/pacbayes_opt/mnist/quad_bound/exp001')
+wandb.init(project="pacbayes_opt", dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/mnist/quad_bound/debug')
 
 dataset_path = '/h/kylehsu/datasets'
 
@@ -29,7 +29,8 @@ config_defaults = dict(
     hidden_layer_sizes=[600, 600],
     min_prob=1e-4,
     delta=0.05,
-    reparam_trick='global'
+    reparam_trick='global',
+    covariance_init_strategy='diagonal'
 )
 config = wandb.config
 config.update({k: v for k, v in config_defaults.items() if k not in dict(config.user_items())})
@@ -55,7 +56,8 @@ bnn = make_bnn_mlp(
     hidden_layer_sizes=config.hidden_layer_sizes,
     prior_std=math.sqrt(config.prior_var),
     min_prob=config.min_prob,
-    reparam_trick=config.reparam_trick
+    reparam_trick=config.reparam_trick,
+    config=config
 )
 wandb.watch(bnn)
 bnn = bnn.to(device)
@@ -94,40 +96,47 @@ def quad_bound(risk, kl, dataset_size, delta):
 #     term2 = (kl + log_2_sqrt_n_over_delta).div(dataset_size * lam * (1 - lam / 2))
 #     return term1 + term2
 
-bound = quad_bound
 
 for i_epoch in tqdm(range(config.n_epochs)):
     bnn.train()
     kls = []
     log_likelihoods = []
     losses = []
+    bounds = []
     corrects = 0
     totals = 0
     for x, y in tqdm(train_loader, total=len(train_set) // config.batch_size):
         x, y = x.to(device), y.to(device)
 
         kl, log_likelihood, correct = bnn.forward_train(x, y, config.n_samples)
-        loss = bound(-log_likelihood, kl, train_set_size, config.delta)
+        loss = quad_bound(-log_likelihood, kl, train_set_size, config.delta)
         optim.zero_grad()
         loss.backward()
         optim.step()
 
-        totals += y.shape[0]
+        total = y.shape[0]
+        error = 1 - correct / total
+        with torch.no_grad():
+            bound = quad_bound(error, kl, train_set_size, config.delta)
+
+        totals += total
         corrects += correct.item()
         kls.append(kl.item())
         log_likelihoods.append(log_likelihood.item())
         losses.append(loss.item())
+        bounds.append(bound.item())
 
     # eval
     acc_val = evaluate(val_loader_eval)
 
     log = {
+        'error_bound': np.mean(bounds),
         'loss_train': np.mean(losses),
-        'err_train': 1 - corrects / totals,
+        'error_train': 1 - corrects / totals,
         'kl_normalized_train': np.mean(kls) / train_set_size,
-        'risk_train': -np.mean(log_likelihoods),
+        'risk_surrogate_train': -np.mean(log_likelihoods),
         'learning_rate': scheduler.get_lr()[0],
-        'err_val': 1 - acc_val
+        'error_val': 1 - acc_val
     }
     wandb.log(log)
 
