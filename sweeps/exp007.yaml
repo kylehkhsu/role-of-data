@@ -1,5 +1,5 @@
-# sync with waseem's code
-name: quad_bound_mnist_sync
+# sync with waseem's code, try 2: log_std instead of \rho
+name: quad_bound_mnist_sync_log_std
 program: scripts/pbmlp_mnist_quad.py
 method: grid
 parameters:

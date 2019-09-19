@@ -1,6 +1,6 @@
 # global reparameterization trick instead of local
 name: quad_bound_mnist_global_reparam
-program: scripts/pbmlp_mnist.py
+program: scripts/pbmlp_mnist_quad.py
 method: grid
 parameters:
   learning_rate:

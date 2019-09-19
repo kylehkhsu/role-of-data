@@ -23,12 +23,12 @@ class BNNLinearLayer(nn.Module):
 
         # randomly initialize, then center prior distributions around the initialization
         W_prior_mean = torch.empty([self.n_input, self.n_output])
-        # nn.init.normal_(W_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
-        nn.init.normal_(W_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)    # waseem
+        nn.init.normal_(W_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
+        # nn.init.normal_(W_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)    # waseem
 
         b_prior_mean = torch.empty([self.n_output])
-        # nn.init.normal_(b_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
-        nn.init.normal_(b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)    # waseem
+        nn.init.normal_(b_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
+        # nn.init.normal_(b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)    # waseem
 
         self.W_mean = nn.Parameter(W_prior_mean)
         self.b_mean = nn.Parameter(b_prior_mean)
@@ -39,6 +39,8 @@ class BNNLinearLayer(nn.Module):
         if config.covariance_init_strategy == 'isotropic':
             self.W_rho = nn.Parameter(torch.ones([self.n_input, self.n_output]) * std_to_rho(prior_std))
             self.b_rho = nn.Parameter(torch.ones([self.n_output]) * std_to_rho(prior_std))
+            # self.W_log_std = nn.Parameter(torch.ones([self.n_input, self.n_output]) * math.log(prior_std))
+            # self.b_log_std = nn.Parameter(torch.ones([self.n_output]) * math.log(prior_std))
 
             self.register_buffer('W_prior_var', torch.Tensor([prior_std ** 2]))
             self.register_buffer('b_prior_var', torch.Tensor([prior_std ** 2]))
@@ -98,6 +100,8 @@ class BNNLinearLayer(nn.Module):
             b_noise = torch.randn(self.b_mean.shape, requires_grad=False).to(device)
             W = self.W_mean + F.softplus(self.W_rho) * W_noise
             b = self.b_mean + F.softplus(self.b_rho) * b_noise
+            # W = self.W_mean + self.W_log_std.exp() * W_noise
+            # b = self.b_mean + self.b_log_std.exp() * b_noise
             z = self.activation(x.mm(W) + b)
 
             if mode == 'MC':
@@ -113,6 +117,12 @@ class BNNLinearLayer(nn.Module):
         b_kl = BNNLinearLayer.kl_between_gaussians(
             self.b_mean, F.softplus(self.b_rho).pow(2), self.b_prior_mean, self.b_prior_var
         )
+        # W_kl = BNNLinearLayer.kl_between_gaussians(
+        #     self.W_mean, self.W_log_std.exp().pow(2), self.W_prior_mean, self.W_prior_var
+        # )
+        # b_kl = BNNLinearLayer.kl_between_gaussians(
+        #     self.b_mean, self.b_log_std.exp().pow(2), self.b_prior_mean, self.b_prior_var
+        # )
         return W_kl.sum() + b_kl.sum()
 
     @staticmethod
@@ -189,8 +199,8 @@ def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, rep
 
 
 if __name__ == '__main__':
-    layer = BNNLinearLayer(784, 600, 'relu', 0.01)
-    ipdb.set_trace()
+    # layer = BNNLinearLayer(784, 600, 'relu', 0.01)
+    # ipdb.set_trace()
 
 
     def test_kl():
@@ -199,15 +209,15 @@ if __name__ == '__main__':
         zero = BNNLinearLayer.kl_between_gaussians(mean, var, mean, var)
         assert zero.isclose(torch.Tensor([0]))
 
-        p_mean = torch.Tensor([3.0])
-        p_var = torch.Tensor([5.0])
-        q_mean = torch.Tensor([2.0])
-        q_var = torch.Tensor([3.0])
+        p_mean = torch.ones([500, 500]) * 2
+        p_var = torch.ones([500, 500]) * 3
+        q_mean = torch.ones([500, 500]) * 5
+        q_var = torch.ones([500, 500]) * 4
         kl = BNNLinearLayer.kl_between_gaussians(
             p_mean, p_var, q_mean, q_var
         )
-        kl2 = torch.log(q_var.sqrt() / p_var.sqrt()) + (p_var + (p_mean - q_mean).pow(2)) / (2 * q_var) - 0.5
-        assert torch.isclose(kl, kl2)
-
+        # kl2 = torch.log(q_var.sqrt() / p_var.sqrt()) + (p_var + (p_mean - q_mean).pow(2)) / (2 * q_var) - 0.5
+        # assert torch.isclose(kl, kl2)
+        print(kl.shape)
 
     test_kl()

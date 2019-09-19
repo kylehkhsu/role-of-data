@@ -30,7 +30,7 @@ config_defaults = dict(
     min_prob=1e-4,
     delta=0.05,
     reparam_trick='global',
-    covariance_init_strategy='diagonal'
+    covariance_init_strategy='diagonal',
 )
 config = wandb.config
 config.update({k: v for k, v in config_defaults.items() if k not in dict(config.user_items())})

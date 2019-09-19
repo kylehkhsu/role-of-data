@@ -1,6 +1,6 @@
 # NTK regime: low learning rates
 name: quad_bound_mnist_local-reparam_isotropic-init_ntk
-program: scripts/pbmlp_mnist.py
+program: scripts/pbmlp_mnist_quad.py
 method: grid
 parameters:
   learning_rate:
