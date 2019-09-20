@@ -5,14 +5,15 @@ import ipdb
 import numpy as np
 import torch.utils.data as data
 import math
+import pprint
 
-import wandb
+# import wandb
 import os
 from src.model.pacbayes_by_backprop import make_bnn_mlp
 
 from tqdm import tqdm
 
-wandb.init(project="pacbayes_opt", dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/mnist/lambda_bound/debug')
+# wandb.init(project="pacbayes_opt", dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/mnist/lambda_bound/debug')
 
 dataset_path = '/h/kylehsu/datasets'
 
@@ -24,19 +25,26 @@ config_defaults = dict(
     batch_size=256,
     n_samples=1,
     n_epochs=256,
-    learning_rate=0.01,
+    learning_rate=0.001,
     momentum=0.99,
-    prior_var=0.1,
+    prior_var=0.01,
     hidden_layer_sizes=[600, 600],
     min_prob=1e-4,
     delta=0.05,
-    reparam_trick='global',
-    covariance_init_strategy='isotropic',
     lambda_init=1.0,
     lambda_learning_rate=1e-4
 )
-config = wandb.config
-config.update({k: v for k, v in config_defaults.items() if k not in dict(config.user_items())})
+
+
+# config = wandb.config
+# config.update({k: v for k, v in config_defaults.items() if k not in dict(config.user_items())})
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+
+
+config = AttrDict(config_defaults)
 
 train_and_val_set = torchvision.datasets.MNIST(
     root=dataset_path,
@@ -58,19 +66,17 @@ bnn = make_bnn_mlp(
     n_output=10,
     hidden_layer_sizes=config.hidden_layer_sizes,
     prior_std=math.sqrt(config.prior_var),
-    min_prob=config.min_prob,
-    reparam_trick=config.reparam_trick,
-    config=config
+    min_prob=config.min_prob
 )
 
-wandb.watch(bnn)
+# wandb.watch(bnn)
 bnn = bnn.to(device)
 optim = torch.optim.SGD(
     bnn.parameters(),
     lr=config.learning_rate,
     momentum=config.momentum
 )
-scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=100, gamma=1)
+scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=int(1e10), gamma=1)
 
 # the λ value start at 1 and decreases to 0.5 and starts increasing again after around 150000 iterations to
 # finally reach a value of 0.75.
@@ -90,7 +96,7 @@ def evaluate(loader):
     with torch.no_grad():
         for x, y in loader:
             x, y = x.to(device), y.to(device)
-            out = bnn(x, 'MAP')
+            out = bnn(x, 'MC')
             y_pred = out.argmax(dim=1)
             accuracy = (y == y_pred).sum().float().div(y.shape[0]).item()
         return accuracy
@@ -103,6 +109,7 @@ def lambda_bound(risk, kl, dataset_size, delta, lam):
     return term1 + term2
 
 
+pp = pprint.PrettyPrinter(indent=4)
 for i_epoch in tqdm(range(config.n_epochs)):
     bnn.train()
     kls = []
@@ -153,9 +160,10 @@ for i_epoch in tqdm(range(config.n_epochs)):
         'error_val': 1 - acc_val,
         'lambda': np.mean(lams)
     }
-    wandb.log(log)
+    # wandb.log(log)
+    pp.pprint(log)
 
     # update lr
     scheduler.step()
 
-torch.save(bnn.state_dict(), os.path.join(wandb.run.dir, 'model.pt'))
+# torch.save(bnn.state_dict(), os.path.join(wandb.run.dir, 'model.pt'))

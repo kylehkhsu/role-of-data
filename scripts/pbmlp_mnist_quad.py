@@ -39,6 +39,8 @@ class AttrDict(dict):
     def __init__(self, *args, **kwargs):
         super(AttrDict, self).__init__(*args, **kwargs)
         self.__dict__ = self
+
+
 config = AttrDict(config_defaults)
 
 train_and_val_set = torchvision.datasets.MNIST(
@@ -91,6 +93,7 @@ def quad_bound(risk, kl, dataset_size, delta):
     sqrt1 = (risk + fraction).sqrt()
     sqrt2 = fraction.sqrt()
     return (sqrt1 + sqrt2).pow(2)
+
 
 pp = pprint.PrettyPrinter(indent=4)
 for i_epoch in tqdm(range(config.n_epochs)):
