@@ -32,6 +32,7 @@ config_defaults = dict(
     delta=0.05,
     reparam_trick='global',
     covariance_init_strategy='isotropic',
+    mean_init_strategy='use_prior_std',
     lambda_init=1.0,
     lambda_learning_rate=1e-4
 )
