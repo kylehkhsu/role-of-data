@@ -24,11 +24,11 @@ class BNNLinearLayer(nn.Module):
         # randomly initialize, then center prior distributions around the initialization
         W_prior_mean = torch.empty([self.n_input, self.n_output])
         nn.init.normal_(W_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
-        # nn.init.normal_(W_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)    # waseem
+        # nn.init.normal_(W_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)    # tf imp
 
         b_prior_mean = torch.empty([self.n_output])
         nn.init.normal_(b_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
-        # nn.init.normal_(b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)    # waseem
+        # nn.init.normal_(b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)    # tf imp
 
         self.W_mean = nn.Parameter(W_prior_mean)
         self.b_mean = nn.Parameter(b_prior_mean)

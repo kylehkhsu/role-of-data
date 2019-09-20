@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import torchvision
 import ipdb
 import numpy as np
@@ -11,7 +12,7 @@ from src.model.pacbayes_by_backprop import make_bnn_mlp
 
 from tqdm import tqdm
 
-wandb.init(project="pacbayes_opt", dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/mnist/quad_bound/debug')
+wandb.init(project="pacbayes_opt", dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/mnist/lambda_bound/debug')
 
 dataset_path = '/h/kylehsu/datasets'
 
@@ -30,7 +31,9 @@ config_defaults = dict(
     min_prob=1e-4,
     delta=0.05,
     reparam_trick='global',
-    covariance_init_strategy='diagonal',
+    covariance_init_strategy='isotropic',
+    lambda_init=1.0,
+    lambda_learning_rate=1e-4
 )
 config = wandb.config
 config.update({k: v for k, v in config_defaults.items() if k not in dict(config.user_items())})
@@ -59,15 +62,27 @@ bnn = make_bnn_mlp(
     reparam_trick=config.reparam_trick,
     config=config
 )
+
 wandb.watch(bnn)
 bnn = bnn.to(device)
-
 optim = torch.optim.SGD(
     bnn.parameters(),
     lr=config.learning_rate,
     momentum=config.momentum
 )
 scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=100, gamma=1)
+
+# the λ value start at 1 and decreases to 0.5 and starts increasing again after around 150000 iterations to
+# finally reach a value of 0.75.
+# The lambda value in flamb was optimized using
+# alternate minimization using SGD with fixed learning rate of 1e − 4
+lam = nn.Module()
+lam.register_parameter('lam', nn.Parameter(torch.ones([]) * config.lambda_init))
+lam.to(device)
+lam_optim = torch.optim.SGD(
+    lam.parameters(),
+    lr=config.lambda_learning_rate
+)
 
 
 def evaluate(loader):
@@ -81,12 +96,11 @@ def evaluate(loader):
         return accuracy
 
 
-def quad_bound(risk, kl, dataset_size, delta):
+def lambda_bound(risk, kl, dataset_size, delta, lam):
     log_2_sqrt_n_over_delta = math.log(2 * math.sqrt(dataset_size) / delta)
-    fraction = (kl + log_2_sqrt_n_over_delta).div(2 * dataset_size)
-    sqrt1 = (risk + fraction).sqrt()
-    sqrt2 = fraction.sqrt()
-    return (sqrt1 + sqrt2).pow(2)
+    term1 = risk.div(1 - lam / 2)
+    term2 = (kl + log_2_sqrt_n_over_delta).div(dataset_size * lam * (1 - lam / 2))
+    return term1 + term2
 
 
 for i_epoch in tqdm(range(config.n_epochs)):
@@ -95,21 +109,28 @@ for i_epoch in tqdm(range(config.n_epochs)):
     log_likelihoods = []
     losses = []
     bounds = []
+    lams = []
     corrects = 0
     totals = 0
     for x, y in tqdm(train_loader, total=len(train_set) // config.batch_size):
         x, y = x.to(device), y.to(device)
 
-        kl, log_likelihood, correct = bnn.forward_train(x, y, config.n_samples)
-        loss = quad_bound(-log_likelihood, kl, train_set_size, config.delta)
+        kl, log_likelihood, _ = bnn.forward_train(x, y, config.n_samples)
+        loss = lambda_bound(-log_likelihood, kl, train_set_size, config.delta, lam.lam)
         optim.zero_grad()
         loss.backward()
         optim.step()
 
+        kl, log_likelihood, correct = bnn.forward_train(x, y, config.n_samples)
+        loss = lambda_bound(-log_likelihood, kl, train_set_size, config.delta, lam.lam)
+        lam_optim.zero_grad()
+        loss.backward()
+        lam_optim.step()
+
         total = y.shape[0]
         error = 1 - correct / total
         with torch.no_grad():
-            bound = quad_bound(error, kl, train_set_size, config.delta)
+            bound = lambda_bound(error, kl, train_set_size, config.delta, lam.lam)
 
         totals += total
         corrects += correct.item()
@@ -117,6 +138,7 @@ for i_epoch in tqdm(range(config.n_epochs)):
         log_likelihoods.append(log_likelihood.item())
         losses.append(loss.item())
         bounds.append(bound.item())
+        lams.append(lam.lam.item())
 
     # eval
     acc_val = evaluate(val_loader_eval)
@@ -128,7 +150,8 @@ for i_epoch in tqdm(range(config.n_epochs)):
         'kl_normalized_train': np.mean(kls) / train_set_size,
         'risk_surrogate_train': -np.mean(log_likelihoods),
         'learning_rate': scheduler.get_lr()[0],
-        'error_val': 1 - acc_val
+        'error_val': 1 - acc_val,
+        'lambda': np.mean(lams)
     }
     wandb.log(log)
 
