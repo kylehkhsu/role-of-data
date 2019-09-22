@@ -7,7 +7,7 @@ import math
 
 import wandb
 import os
-from src.model.pacbayes_by_backprop import make_bnn_mlp
+from src.model.pacbayes_by_backprop import make_bmlp, BMLP
 
 from tqdm import tqdm
 
@@ -30,7 +30,6 @@ config_defaults = dict(
     min_prob=1e-4,
     delta=0.05,
     reparam_trick='global',
-    covariance_init_strategy='diagonal',
 )
 config = wandb.config
 config.update({k: v for k, v in config_defaults.items() if k not in dict(config.user_items())})
@@ -50,14 +49,13 @@ train_loader = data.DataLoader(train_set, batch_size=config.batch_size, shuffle=
 train_loader_eval = data.DataLoader(train_set, batch_size=len(train_set))
 val_loader_eval = data.DataLoader(val_set, batch_size=len(val_set))
 
-bnn = make_bnn_mlp(
+bnn = make_bmlp(
     n_input=784,
     n_output=10,
     hidden_layer_sizes=config.hidden_layer_sizes,
     prior_std=math.sqrt(config.prior_var),
     min_prob=config.min_prob,
     reparam_trick=config.reparam_trick,
-    config=config
 )
 wandb.watch(bnn)
 bnn = bnn.to(device)
@@ -75,18 +73,10 @@ def evaluate(loader):
     with torch.no_grad():
         for x, y in loader:
             x, y = x.to(device), y.to(device)
-            out = bnn(x, 'MAP')
+            out = bnn(x, 'MC')
             y_pred = out.argmax(dim=1)
             accuracy = (y == y_pred).sum().float().div(y.shape[0]).item()
         return accuracy
-
-
-def quad_bound(risk, kl, dataset_size, delta):
-    log_2_sqrt_n_over_delta = math.log(2 * math.sqrt(dataset_size) / delta)
-    fraction = (kl + log_2_sqrt_n_over_delta).div(2 * dataset_size)
-    sqrt1 = (risk + fraction).sqrt()
-    sqrt2 = fraction.sqrt()
-    return (sqrt1 + sqrt2).pow(2)
 
 
 for i_epoch in tqdm(range(config.n_epochs)):
@@ -101,7 +91,7 @@ for i_epoch in tqdm(range(config.n_epochs)):
         x, y = x.to(device), y.to(device)
 
         kl, log_likelihood, correct = bnn.forward_train(x, y, config.n_samples)
-        loss = quad_bound(-log_likelihood, kl, train_set_size, config.delta)
+        loss = BMLP.quad_bound(-log_likelihood, kl, train_set_size, config.delta)
         optim.zero_grad()
         loss.backward()
         optim.step()
@@ -109,7 +99,7 @@ for i_epoch in tqdm(range(config.n_epochs)):
         total = y.shape[0]
         error = 1 - correct / total
         with torch.no_grad():
-            bound = quad_bound(error, kl, train_set_size, config.delta)
+            bound = BMLP.quad_bound(error, kl, train_set_size, config.delta)
 
         totals += total
         corrects += correct.item()

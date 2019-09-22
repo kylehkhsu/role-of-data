@@ -8,7 +8,7 @@ import math
 
 import wandb
 import os
-from src.model.pacbayes_by_backprop import make_bnn_mlp
+from src.model.pacbayes_by_backprop import make_bnn_mlp, BMLP
 
 from tqdm import tqdm
 
@@ -97,13 +97,6 @@ def evaluate(loader):
         return accuracy
 
 
-def lambda_bound(risk, kl, dataset_size, delta, lam):
-    log_2_sqrt_n_over_delta = math.log(2 * math.sqrt(dataset_size) / delta)
-    term1 = risk.div(1 - lam / 2)
-    term2 = (kl + log_2_sqrt_n_over_delta).div(dataset_size * lam * (1 - lam / 2))
-    return term1 + term2
-
-
 for i_epoch in tqdm(range(config.n_epochs)):
     bnn.train()
     kls = []
@@ -117,13 +110,13 @@ for i_epoch in tqdm(range(config.n_epochs)):
         x, y = x.to(device), y.to(device)
 
         kl, log_likelihood, _ = bnn.forward_train(x, y, config.n_samples)
-        loss = lambda_bound(-log_likelihood, kl, train_set_size, config.delta, lam.lam)
+        loss = BMLP.lambda_bound(-log_likelihood, kl, train_set_size, config.delta, lam.lam)
         optim.zero_grad()
         loss.backward()
         optim.step()
 
         kl, log_likelihood, correct = bnn.forward_train(x, y, config.n_samples)
-        loss = lambda_bound(-log_likelihood, kl, train_set_size, config.delta, lam.lam)
+        loss = BMLP.lambda_bound(-log_likelihood, kl, train_set_size, config.delta, lam.lam)
         lam_optim.zero_grad()
         loss.backward()
         lam_optim.step()
@@ -131,7 +124,7 @@ for i_epoch in tqdm(range(config.n_epochs)):
         total = y.shape[0]
         error = 1 - correct / total
         with torch.no_grad():
-            bound = lambda_bound(error, kl, train_set_size, config.delta, lam.lam)
+            bound = BMLP.lambda_bound(error, kl, train_set_size, config.delta, lam.lam)
 
         totals += total
         corrects += correct.item()

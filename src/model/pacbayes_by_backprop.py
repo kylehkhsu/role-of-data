@@ -15,50 +15,50 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class BNNLinearLayer(nn.Module):
-    def __init__(self, n_input, n_output, activation, prior_std, reparam_trick, config):
+    def __init__(
+            self,
+            n_input,
+            n_output,
+            activation,
+            prior_std,
+            reparam_trick,
+            W_prior_mean=None,
+            b_prior_mean=None,
+            W_posterior_mean_init=None,
+            b_posterior_mean_init=None,
+    ):
         super(BNNLinearLayer, self).__init__()
         self.n_input = n_input
         self.n_output = n_output
+        assert reparam_trick in ['local', 'global']
         self.reparam_trick = reparam_trick
 
-        # randomly initialize, then center prior distributions around the initialization
-        W_prior_mean = torch.empty([self.n_input, self.n_output])
-        nn.init.normal_(W_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
-        # nn.init.normal_(W_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)    # tf imp
+        if W_prior_mean is None and b_prior_mean is None:
+            W_prior_mean = torch.empty([self.n_input, self.n_output])
+            b_prior_mean = torch.empty([self.n_output])
+            nn.init.normal_(W_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
+            nn.init.normal_(b_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
+        elif W_prior_mean is not None and b_prior_mean is not None:
+            pass
+        else:
+            raise ValueError
 
-        b_prior_mean = torch.empty([self.n_output])
-        nn.init.normal_(b_prior_mean, mean=0, std=prior_std).clamp_(min=-2 * prior_std, max=2 * prior_std)
-        # nn.init.normal_(b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)    # tf imp
-
-        self.W_mean = nn.Parameter(W_prior_mean)
-        self.b_mean = nn.Parameter(b_prior_mean)
+        if W_posterior_mean_init is None and b_posterior_mean_init is None:
+            self.W_mean = nn.Parameter(W_prior_mean)
+            self.b_mean = nn.Parameter(b_prior_mean)
+        elif W_posterior_mean_init is not None and b_posterior_mean_init is not None:
+            self.W_mean = nn.Parameter(W_posterior_mean_init)
+            self.b_mean = nn.Parameter(b_posterior_mean_init)
+        else:
+            raise ValueError
 
         self.register_buffer('W_prior_mean', W_prior_mean.clone().detach())
         self.register_buffer('b_prior_mean', b_prior_mean.clone().detach())
 
-        if config.covariance_init_strategy == 'isotropic':
-            self.W_rho = nn.Parameter(torch.ones([self.n_input, self.n_output]) * std_to_rho(prior_std))
-            self.b_rho = nn.Parameter(torch.ones([self.n_output]) * std_to_rho(prior_std))
-            # self.W_log_std = nn.Parameter(torch.ones([self.n_input, self.n_output]) * math.log(prior_std))
-            # self.b_log_std = nn.Parameter(torch.ones([self.n_output]) * math.log(prior_std))
-
-            self.register_buffer('W_prior_var', torch.Tensor([prior_std ** 2]))
-            self.register_buffer('b_prior_var', torch.Tensor([prior_std ** 2]))
-        elif config.covariance_init_strategy == 'diagonal':
-            # https://github.com/deepmind/sonnet/blob/master/sonnet/examples/brnn_ptb.py#L276
-            W_prior_rho = torch.empty([self.n_input, self.n_output])
-            nn.init.uniform_(W_prior_rho, a=std_to_rho(prior_std / 2.0), b=std_to_rho(prior_std))
-
-            b_prior_rho = torch.empty([self.n_output])
-            nn.init.uniform_(b_prior_rho, a=std_to_rho(prior_std / 2.0), b=std_to_rho(prior_std))
-            self.W_rho = nn.Parameter(W_prior_rho)
-            self.b_rho = nn.Parameter(b_prior_rho)
-
-            self.register_buffer('W_prior_var', F.softplus(W_prior_rho.clone().detach()).pow(2))
-            self.register_buffer('b_prior_var', F.softplus(b_prior_rho.clone().detach()).pow(2))
-
-        else:
-            raise ValueError
+        self.W_rho = nn.Parameter(torch.ones([self.n_input, self.n_output]) * std_to_rho(prior_std))
+        self.b_rho = nn.Parameter(torch.ones([self.n_output]) * std_to_rho(prior_std))
+        self.register_buffer('W_prior_var', torch.Tensor([prior_std ** 2]))
+        self.register_buffer('b_prior_var', torch.Tensor([prior_std ** 2]))
 
         self.activation = None
         if activation == 'relu':
@@ -100,8 +100,6 @@ class BNNLinearLayer(nn.Module):
             b_noise = torch.randn(self.b_mean.shape, requires_grad=False).to(device)
             W = self.W_mean + F.softplus(self.W_rho) * W_noise
             b = self.b_mean + F.softplus(self.b_rho) * b_noise
-            # W = self.W_mean + self.W_log_std.exp() * W_noise
-            # b = self.b_mean + self.b_log_std.exp() * b_noise
             z = self.activation(x.mm(W) + b)
 
             if mode == 'MC':
@@ -110,19 +108,13 @@ class BNNLinearLayer(nn.Module):
             return z, self.layer_kl()
 
     def layer_kl(self):
-        # KL[q(w|\theta) || p(w)]
+        """KL[q(w|\theta) || p(w)]"""
         W_kl = BNNLinearLayer.kl_between_gaussians(
             self.W_mean, F.softplus(self.W_rho).pow(2), self.W_prior_mean, self.W_prior_var
         )
         b_kl = BNNLinearLayer.kl_between_gaussians(
             self.b_mean, F.softplus(self.b_rho).pow(2), self.b_prior_mean, self.b_prior_var
         )
-        # W_kl = BNNLinearLayer.kl_between_gaussians(
-        #     self.W_mean, self.W_log_std.exp().pow(2), self.W_prior_mean, self.W_prior_var
-        # )
-        # b_kl = BNNLinearLayer.kl_between_gaussians(
-        #     self.b_mean, self.b_log_std.exp().pow(2), self.b_prior_mean, self.b_prior_var
-        # )
         return W_kl.sum() + b_kl.sum()
 
     @staticmethod
@@ -131,10 +123,9 @@ class BNNLinearLayer(nn.Module):
         return 0.5 * ((q_var / p_var).log() + (p_var + (p_mean - q_mean).pow(2)) / q_var - 1)
 
 
-class BNN(nn.Module):
+class BMLP(nn.Module):
     def __init__(self, min_prob, *layers):
-        super(BNN, self).__init__()
-
+        super(BMLP, self).__init__()
         for i_layer, layer in enumerate(layers):
             self.add_module(f'layer{i_layer}', layer)
 
@@ -156,7 +147,7 @@ class BNN(nn.Module):
                 x = layer(x, mode)
             return x
 
-    def forward_train(self, x, y, n_samples):
+    def forward_train(self, x, y, n_samples=1):
         x = x.view([x.shape[0], -1])
         y = y.view([y.shape[0], -1])
 
@@ -176,8 +167,23 @@ class BNN(nn.Module):
 
         return running_kl / n_samples, running_log_likelihood / n_samples, running_correct / n_samples
 
+    @staticmethod
+    def quad_bound(risk, kl, dataset_size, delta):
+        log_2_sqrt_n_over_delta = math.log(2 * math.sqrt(dataset_size) / delta)
+        fraction = (kl + log_2_sqrt_n_over_delta).div(2 * dataset_size)
+        sqrt1 = (risk + fraction).sqrt()
+        sqrt2 = fraction.sqrt()
+        return (sqrt1 + sqrt2).pow(2)
 
-def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, reparam_trick, config):
+    @staticmethod
+    def lambda_bound(risk, kl, dataset_size, delta, lam):
+        log_2_sqrt_n_over_delta = math.log(2 * math.sqrt(dataset_size) / delta)
+        term1 = risk.div(1 - lam / 2)
+        term2 = (kl + log_2_sqrt_n_over_delta).div(dataset_size * lam * (1 - lam / 2))
+        return term1 + term2
+
+
+def make_bmlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, reparam_trick):
     layers = []
     n_in = n_input
     assert len(hidden_layer_sizes) > 0
@@ -185,17 +191,44 @@ def make_bnn_mlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, rep
     for h in hidden_layer_sizes:
         layers.append(
             BNNLinearLayer(
-                n_in, h, 'relu', prior_std, reparam_trick, config
+                n_in, h, 'relu', prior_std, reparam_trick
             )
         )
         n_in = h
     layers.append(
         BNNLinearLayer(
-            n_in, n_output, 'softmax', prior_std, reparam_trick, config
+            n_in, n_output, 'softmax', prior_std, reparam_trick
         )
     )
 
-    return BNN(min_prob, *layers)
+    return BMLP(min_prob, *layers)
+
+
+def make_bmlp_from_mlps(mlp_posterior_mean_init, mlp_prior, prior_std, min_prob, reparam_trick):
+    posterior_mean_init_parameters = list(mlp_posterior_mean_init.parameters())
+    prior_mean_parameters = list(mlp_prior.parameters())
+    n_layers = len(prior_mean_parameters) // 2
+
+    layers = []
+    for i_layer in range(n_layers):
+        if i_layer == n_layers - 1:
+            activation = 'softmax'
+        else:
+            activation = 'relu'
+        layers.append(
+            BNNLinearLayer(
+                n_input=prior_mean_parameters[i_layer * 2].shape[1],    # unintuitive, but correct
+                n_output=prior_mean_parameters[i_layer * 2].shape[0],
+                activation=activation,
+                prior_std=prior_std,
+                reparam_trick=reparam_trick,
+                W_prior_mean=prior_mean_parameters[i_layer * 2].t(),
+                b_prior_mean=prior_mean_parameters[i_layer * 2 + 1],
+                W_posterior_mean_init=posterior_mean_init_parameters[i_layer * 2].t(),
+                b_posterior_mean_init=posterior_mean_init_parameters[i_layer * 2 + 1],
+            )
+        )
+    return BMLP(min_prob, *layers)
 
 
 if __name__ == '__main__':
