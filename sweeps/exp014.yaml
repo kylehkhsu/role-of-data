@@ -1,10 +1,10 @@
-# exp012 and exp013 but trying lower prior_var
-name: data_dependent_prior_mnist_try2_part3
+# exp 011-013 but higher alpha values
+name: data_dependent_prior_mnist_try2_part4
 program: scripts/data_dependent_prior.py
 method: grid
 parameters:
   alpha:
-    values: [0.1, 0.2, 0.5]
+    values: [0.7, 0.9, 0.95, 0.98]
   prior_learning_rate:
     value: 1e-2
   posterior_learning_rate:
@@ -19,7 +19,7 @@ parameters:
   posterior_training_epochs:
     value: 256
   prior_var:
-    values: [!!float 1e-4]
+    values: [!!float 1e-4, !!float 1e-3, !!float 1e-2]
   min_prob:
     value: 1e-4
   delta:

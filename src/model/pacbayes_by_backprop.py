@@ -26,6 +26,7 @@ class BNNLinearLayer(nn.Module):
             b_prior_mean=None,
             W_posterior_mean_init=None,
             b_posterior_mean_init=None,
+            optimize_posterior_mean=True,
     ):
         super(BNNLinearLayer, self).__init__()
         self.n_input = n_input
@@ -47,8 +48,12 @@ class BNNLinearLayer(nn.Module):
             self.W_mean = nn.Parameter(W_prior_mean)
             self.b_mean = nn.Parameter(b_prior_mean)
         elif W_posterior_mean_init is not None and b_posterior_mean_init is not None:
-            self.W_mean = nn.Parameter(W_posterior_mean_init)
-            self.b_mean = nn.Parameter(b_posterior_mean_init)
+            if optimize_posterior_mean:
+                self.W_mean = nn.Parameter(W_posterior_mean_init)
+                self.b_mean = nn.Parameter(b_posterior_mean_init)
+            else:
+                self.register_buffer('W_mean', W_posterior_mean_init.clone().detach())
+                self.register_buffer('b_mean', b_posterior_mean_init.clone().detach())
         else:
             raise ValueError
 
@@ -152,20 +157,22 @@ class BMLP(nn.Module):
         y = y.view([y.shape[0], -1])
 
         running_kl = 0.0
-        running_log_likelihood = 0.0
+        running_surrogate = 0.0
         running_correct = 0.0
         for i in range(n_samples):
             probs, kl = self(x, 'forward')
+            n_classes = probs.shape[-1]
 
             log_likelihood = probs.gather(1, y).clamp(min=self.min_prob, max=1).log().mean()
+            surrogate = log_likelihood.div(math.log(n_classes))
             predictions = probs.argmax(dim=-1)
             correct = (predictions == y.squeeze()).sum().float()
 
             running_correct += correct
             running_kl += kl
-            running_log_likelihood += log_likelihood
+            running_surrogate += surrogate
 
-        return running_kl / n_samples, running_log_likelihood / n_samples, running_correct / n_samples
+        return running_kl / n_samples, running_surrogate / n_samples, running_correct / n_samples
 
     @staticmethod
     def quad_bound(risk, kl, dataset_size, delta):
@@ -181,6 +188,18 @@ class BMLP(nn.Module):
         term1 = risk.div(1 - lam / 2)
         term2 = (kl + log_2_sqrt_n_over_delta).div(dataset_size * lam * (1 - lam / 2))
         return term1 + term2
+
+    @staticmethod
+    def bottom_bound(risk, kl, dataset_size, delta):
+        B = (kl + math.log(2 * math.sqrt(dataset_size) / delta)).div(dataset_size)
+        return risk + B.div(2).sqrt()
+
+    @staticmethod
+    def inverted_kl_bound(risk, kl, dataset_size, delta):
+        return torch.min(
+            BMLP.quad_bound(risk, kl, dataset_size, delta),
+            BMLP.bottom_bound(risk, kl, dataset_size, delta)
+        )
 
 
 def make_bmlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, reparam_trick):
@@ -204,9 +223,9 @@ def make_bmlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, repara
     return BMLP(min_prob, *layers)
 
 
-def make_bmlp_from_mlps(mlp_posterior_mean_init, mlp_prior, prior_std, min_prob, reparam_trick):
+def make_bmlp_from_mlps(mlp_posterior_mean_init, mlp_prior_mean, prior_std, min_prob, reparam_trick, optimize_posterior_mean=True):
     posterior_mean_init_parameters = list(mlp_posterior_mean_init.parameters())
-    prior_mean_parameters = list(mlp_prior.parameters())
+    prior_mean_parameters = list(mlp_prior_mean.parameters())
     n_layers = len(prior_mean_parameters) // 2
 
     layers = []
@@ -226,6 +245,7 @@ def make_bmlp_from_mlps(mlp_posterior_mean_init, mlp_prior, prior_std, min_prob,
                 b_prior_mean=prior_mean_parameters[i_layer * 2 + 1],
                 W_posterior_mean_init=posterior_mean_init_parameters[i_layer * 2].t(),
                 b_posterior_mean_init=posterior_mean_init_parameters[i_layer * 2 + 1],
+                optimize_posterior_mean=optimize_posterior_mean
             )
         )
     return BMLP(min_prob, *layers)
