@@ -5,7 +5,7 @@ import argparse
 import numpy as np
 import ipdb
 from src.model.mlp import MLP
-from src.model.pacbayes_by_backprop import make_bmlp_from_mlps, BMLP
+from src.model.bayesian_classifier import make_bayesian_classifier_from_mlps
 from tqdm import tqdm
 import pprint
 from copy import deepcopy
@@ -262,41 +262,41 @@ if config.alpha != 0:
         if i_epoch - i_epoch_closest > config.prior_mean_patience:
             break
 
-bmlp = make_bmlp_from_mlps(mlp_posterior_mean_init=mlp_posterior_mean,
-                           mlp_prior_mean=mlp_prior_mean,
-                           prior_std=math.sqrt(config.prior_var),
-                           min_prob=config.min_prob,
-                           reparam_trick=config.reparam_trick,
-                           optimize_posterior_mean=False)
-bmlp = bmlp.to(device)
+bayesian_classifier = make_bayesian_classifier_from_mlps(mlp_posterior_mean_init=mlp_posterior_mean,
+                                          mlp_prior_mean=mlp_prior_mean,
+                                          prior_std=math.sqrt(config.prior_var),
+                                          min_prob=config.min_prob,
+                                          reparam_trick=config.reparam_trick,
+                                          optimize_posterior_mean=False)
+bayesian_classifier = bayesian_classifier.to(device)
 posterior_variance_optimizer = torch.optim.SGD(
-    bmlp.parameters(),
+    bayesian_classifier.parameters(),
     lr=config.posterior_variance_learning_rate,
     momentum=config.momentum
 )
 
 
-def evaluate_bmlp(bmlp):
-    bmlp.eval()
+def evaluate_bayesian_classifier(bayesian_classifier):
+    bayesian_classifier.eval()
     with torch.no_grad():
         for x, y in test_loader:
             assert y.shape[0] == len(test_set)
             x, y = x.to(device), y.to(device)
-            probs = bmlp(x, 'MC')
+            probs = bayesian_classifier(x, 'MC')
             preds = probs.argmax(dim=-1)
             error = 1 - (y == preds).sum().float().div(y.shape[0]).item()
     return error
 
 
 for i_epoch in tqdm(range(config.posterior_variance_training_epochs)):
-    bmlp.train()
+    bayesian_classifier.train()
     kls, surrogates, losses, bounds = [], [], [], []
     corrects, totals = 0.0, 0.0
     for x, y in tqdm(posterior_variance_train_loader, total=posterior_variance_train_set_size // config.batch_size):
         x, y = x.to(device), y.to(device)
 
-        kl, surrogate, correct = bmlp.forward_train(x, y)
-        loss = bmlp.inverted_kl_bound(-surrogate, kl, posterior_variance_train_set_size, config.delta)
+        kl, surrogate, correct = bayesian_classifier.forward_train(x, y)
+        loss = bayesian_classifier.inverted_kl_bound(-surrogate, kl, posterior_variance_train_set_size, config.delta)
         posterior_variance_optimizer.zero_grad()
         loss.backward()
         posterior_variance_optimizer.step()
@@ -304,7 +304,7 @@ for i_epoch in tqdm(range(config.posterior_variance_training_epochs)):
         total = y.shape[0]
         error = 1 - correct / total
         with torch.no_grad():
-            bound = bmlp.inverted_kl_bound(error, kl, posterior_variance_train_set_size, config.delta)
+            bound = bayesian_classifier.inverted_kl_bound(error, kl, posterior_variance_train_set_size, config.delta)
 
         totals += total
         corrects += correct.item()
@@ -313,7 +313,7 @@ for i_epoch in tqdm(range(config.posterior_variance_training_epochs)):
         losses.append(loss.item())
         bounds.append(bound.item())
 
-    error_test = evaluate_bmlp(bmlp)
+    error_test = evaluate_bayesian_classifier(bayesian_classifier)
 
     log = {
         'error_bound': np.mean(bounds),
@@ -326,4 +326,4 @@ for i_epoch in tqdm(range(config.posterior_variance_training_epochs)):
     wandb.log(log)
     pp.pprint(log)
 
-torch.save(bmlp.state_dict(), os.path.join(wandb.run.dir, 'model.pt'))
+torch.save(bayesian_classifier.state_dict(), os.path.join(wandb.run.dir, 'model.pt'))

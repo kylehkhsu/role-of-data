@@ -5,7 +5,8 @@ import argparse
 import numpy as np
 import ipdb
 from src.model.mlp import MLP
-from src.model.pacbayes_by_backprop import make_bmlp_from_mlps, BMLP
+from src.model.classifier import Classifier
+from src.model.bayesian_classifier import make_bayesian_classifier_from_mlps
 from tqdm import tqdm
 import pprint
 from copy import deepcopy
@@ -98,56 +99,59 @@ mlp = MLP(
     n_output=10,
     hidden_layer_sizes=config.hidden_layer_sizes
 )
-mlp = mlp.to(device)
+classifier = Classifier(
+    net=mlp
+)
+classifier = classifier.to(device)
 
 prior_optimizer = torch.optim.SGD(
-    mlp.parameters(),
+    classifier.parameters(),
     lr=config.prior_learning_rate,
     momentum=config.momentum
 )
 
 
-def evaluate_mlp():
-    mlp.eval()
+def evaluate_classifier():
+    classifier.eval()
     with torch.no_grad():
         for x, y in test_loader:
             assert y.shape[0] == len(test_set)
             x, y = x.to(device), y.to(device)
-            probs = mlp(x)
-            correct, total = mlp.evaluate(probs, y)
+            probs = classifier(x)
+            correct, total = classifier.evaluate(probs, y)
             error = 1 - correct / total
     return error
 
 
-mlp_posterior_mean_init = None
+classifier_posterior_mean_init = None
 
 if config.alpha != 0:
     for i_epoch in tqdm(range(config.prior_training_epochs)):
-        mlp.train()
+        classifier.train()
         losses = []
         corrects, totals = 0.0, 0.0
         for x, y in tqdm(prior_train_loader, total=prior_train_set_size // config.batch_size):
             x, y = x.to(device), y.to(device)
 
-            probs = mlp(x)
-            loss = mlp.loss(probs, y)
+            probs = classifier(x)
+            loss = classifier.loss(probs, y)
             prior_optimizer.zero_grad()
             loss.backward()
             prior_optimizer.step()
 
             with torch.no_grad():
-                correct, total = mlp.evaluate(probs, y)
+                correct, total = classifier.evaluate(probs, y)
 
             losses.append(loss.item())
             totals += total.item()
             corrects += correct.item()
 
         if i_epoch == 0:
-            mlp_posterior_mean_init = deepcopy(mlp).to('cpu')
-            print('saved copy of mlp as mlp_posterior_mean_init')
+            classifier_posterior_mean_init = deepcopy(classifier).to('cpu')
+            print('saved copy of classifier as classifier_posterior_mean_init')
 
         error_train = 1 - corrects / totals
-        error_test = evaluate_mlp()
+        error_test = evaluate_classifier()
 
         log = {
             'prior_training_epoch': i_epoch,
@@ -161,51 +165,51 @@ if config.alpha != 0:
             break
 else:
     log = {
-        'error_test': evaluate_mlp().item()
+        'error_test': evaluate_classifier().item()
     }
     pp.pprint(log)
-mlp_prior_mean = mlp.to('cpu')
-if mlp_posterior_mean_init is None:
+classifier_prior_mean = classifier.to('cpu')
+if classifier_posterior_mean_init is None:
     assert config.alpha == 0 or config.prior_training_epochs == 0
     print('no prior was trained')
-    mlp_posterior_mean_init = deepcopy(mlp).to('cpu')
+    classifier_posterior_mean_init = deepcopy(classifier).to('cpu')
 
-bmlp = make_bmlp_from_mlps(
-    mlp_posterior_mean_init=mlp_posterior_mean_init,
-    mlp_prior_mean=mlp_prior_mean,
+bayesian_classifier = make_bayesian_classifier_from_mlps(
+    mlp_posterior_mean_init=classifier_posterior_mean_init.net,
+    mlp_prior_mean=classifier_prior_mean.net,
     prior_std=math.sqrt(config.prior_var),
     min_prob=config.min_prob,
     reparam_trick=config.reparam_trick
 )
-bmlp = bmlp.to(device)
+bayesian_classifier = bayesian_classifier.to(device)
 posterior_optimizer = torch.optim.SGD(
-    bmlp.parameters(),
+    bayesian_classifier.parameters(),
     lr=config.posterior_learning_rate,
     momentum=config.momentum
 )
 
 
-def evaluate_bmlp():
-    bmlp.eval()
+def evaluate_bayesian_classifier():
+    bayesian_classifier.eval()
     with torch.no_grad():
         for x, y in test_loader:
             assert y.shape[0] == len(test_set)
             x, y = x.to(device), y.to(device)
-            probs = bmlp(x, 'MC')
+            probs = bayesian_classifier(x, 'MC')
             preds = probs.argmax(dim=-1)
             error = 1 - (y == preds).sum().float().div(y.shape[0]).item()
     return error
 
 
 for i_epoch in tqdm(range(config.posterior_training_epochs)):
-    bmlp.train()
+    bayesian_classifier.train()
     kls, surrogates, losses, bounds = [], [], [], []
     corrects, totals = 0.0, 0.0
     for x, y in tqdm(posterior_train_loader, total=posterior_train_set_size // config.batch_size):
         x, y = x.to(device), y.to(device)
 
-        kl, surrogate, correct = bmlp.forward_train(x, y)
-        loss = bmlp.quad_bound(-surrogate, kl, posterior_train_set_size, config.delta)
+        kl, surrogate, correct = bayesian_classifier.forward_train(x, y)
+        loss = bayesian_classifier.quad_bound(-surrogate, kl, posterior_train_set_size, config.delta)
         posterior_optimizer.zero_grad()
         loss.backward()
         posterior_optimizer.step()
@@ -213,7 +217,7 @@ for i_epoch in tqdm(range(config.posterior_training_epochs)):
         total = y.shape[0]
         error = 1 - correct / total
         with torch.no_grad():
-            bound = bmlp.quad_bound(error, kl, posterior_train_set_size, config.delta)
+            bound = bayesian_classifier.quad_bound(error, kl, posterior_train_set_size, config.delta)
 
         totals += total
         corrects += correct.item()
@@ -222,7 +226,7 @@ for i_epoch in tqdm(range(config.posterior_training_epochs)):
         losses.append(loss.item())
         bounds.append(bound.item())
 
-    error_test = evaluate_bmlp()
+    error_test = evaluate_bayesian_classifier()
 
     log = {
         'error_bound': np.mean(bounds),
@@ -235,4 +239,4 @@ for i_epoch in tqdm(range(config.posterior_training_epochs)):
     wandb.log(log)
     pp.pprint(log)
 
-torch.save(bmlp.state_dict(), os.path.join(wandb.run.dir, 'model.pt'))
+torch.save(bayesian_classifier.state_dict(), os.path.join(wandb.run.dir, 'model.pt'))
