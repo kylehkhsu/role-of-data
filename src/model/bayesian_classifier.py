@@ -15,17 +15,16 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class BayesianClassifier(nn.Module):
-    def __init__(self, min_prob, *layers):
+    def __init__(self, min_prob, normalize_surrogate_by_log_classes, *layers):
         super(BayesianClassifier, self).__init__()
         for i_layer, layer in enumerate(layers):
             self.add_module(f'layer{i_layer}', layer)
 
         self.layers = [module for name, module in self.named_modules() if 'layer' in name]
         self.min_prob = min_prob
+        self.normalize_surrogate_by_log_classes = normalize_surrogate_by_log_classes
 
     def forward(self, x, mode):
-        x = x.view([x.shape[0], -1])
-
         if mode == 'forward':
             net_kl = 0.0
             for layer in self.layers:
@@ -39,7 +38,6 @@ class BayesianClassifier(nn.Module):
             return x
 
     def forward_train(self, x, y, n_samples=1):
-        x = x.view([x.shape[0], -1])
         y = y.view([y.shape[0], -1])
 
         running_kl = 0.0
@@ -50,7 +48,9 @@ class BayesianClassifier(nn.Module):
             n_classes = probs.shape[-1]
 
             log_likelihood = probs.gather(1, y).clamp(min=self.min_prob, max=1).log().mean()
-            surrogate = log_likelihood.div(math.log(n_classes))
+            surrogate = -log_likelihood
+            if self.normalize_surrogate_by_log_classes:
+                surrogate = surrogate.div(math.log(n_classes))
             predictions = probs.argmax(dim=-1)
             correct = (predictions == y.squeeze()).sum().float()
 
@@ -86,60 +86,3 @@ class BayesianClassifier(nn.Module):
             BayesianClassifier.quad_bound(risk, kl, dataset_size, delta),
             BayesianClassifier.pinsker_bound(risk, kl, dataset_size, delta)
         )
-
-
-def make_bmlp(n_input, n_output, hidden_layer_sizes, prior_std, min_prob, reparam_trick):
-    layers = []
-    n_in = n_input
-    assert len(hidden_layer_sizes) > 0
-
-    for h in hidden_layer_sizes:
-        layers.append(
-            BayesianLinear(
-                n_in, h, 'relu', prior_std, reparam_trick
-            )
-        )
-        n_in = h
-    layers.append(
-        BayesianLinear(
-            n_in, n_output, 'softmax', prior_std, reparam_trick
-        )
-    )
-
-    return BayesianClassifier(min_prob, *layers)
-
-
-def make_bayesian_classifier_from_mlps(
-        mlp_posterior_mean_init,
-        mlp_prior_mean,
-        prior_std,
-        min_prob,
-        reparam_trick,
-        optimize_posterior_mean=True
-):
-    posterior_mean_init_parameters = list(mlp_posterior_mean_init.parameters())
-    prior_mean_parameters = list(mlp_prior_mean.parameters())
-    n_layers = len(prior_mean_parameters) // 2
-
-    layers = []
-    for i_layer in range(n_layers):
-        if i_layer == n_layers - 1:
-            activation = 'softmax'
-        else:
-            activation = 'relu'
-        layers.append(
-            BayesianLinear(
-                n_input=prior_mean_parameters[i_layer * 2].shape[1],  # unintuitive, but correct
-                n_output=prior_mean_parameters[i_layer * 2].shape[0],
-                activation=activation,
-                prior_std=prior_std,
-                reparam_trick=reparam_trick,
-                W_prior_mean=prior_mean_parameters[i_layer * 2].t(),
-                b_prior_mean=prior_mean_parameters[i_layer * 2 + 1],
-                W_posterior_mean_init=posterior_mean_init_parameters[i_layer * 2].t(),
-                b_posterior_mean_init=posterior_mean_init_parameters[i_layer * 2 + 1],
-                optimize_posterior_mean=optimize_posterior_mean
-            )
-        )
-    return BayesianClassifier(min_prob, *layers)
-

@@ -6,7 +6,7 @@ import numpy as np
 import ipdb
 from src.model.mlp import MLP
 from src.model.classifier import Classifier
-from src.model.bayesian_classifier import make_bayesian_classifier_from_mlps
+from src.model.makers import make_bayesian_classifier_from_mlps
 from tqdm import tqdm
 import pprint
 from copy import deepcopy
@@ -16,7 +16,8 @@ import os
 
 pp = pprint.PrettyPrinter()
 wandb.init(project="pacbayes_opt",
-           dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior/')
+           dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior/',
+           tags=['debug'])
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -24,16 +25,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
 parser.add_argument('--alpha', type=float, default=0.1)
 parser.add_argument('--prior_learning_rate', type=float, default=1e-2)
-parser.add_argument('--posterior_learning_rate', type=float, default=1e-2)
+parser.add_argument('--posterior_learning_rate', type=float, default=0.00001)
 parser.add_argument('--momentum', type=float, default=0.95)
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600, 600])
-parser.add_argument('--prior_training_epochs', type=int, default=10)
+parser.add_argument('--prior_training_epochs', type=int, default=100)
 parser.add_argument('--posterior_training_epochs', type=int, default=256)
-parser.add_argument('--prior_var', type=float, default=0.001)
+parser.add_argument('--prior_var', type=float, default=1e-7)
 parser.add_argument('--min_prob', type=float, default=1e-4)
 parser.add_argument('--delta', type=float, default=0.05)
-parser.add_argument('--reparam_trick', type=str, default='global')
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--seed', type=int, default=42)
 
@@ -177,9 +177,13 @@ if classifier_posterior_mean_init is None:
 bayesian_classifier = make_bayesian_classifier_from_mlps(
     mlp_posterior_mean_init=classifier_posterior_mean_init.net,
     mlp_prior_mean=classifier_prior_mean.net,
-    prior_std=math.sqrt(config.prior_var),
-    min_prob=config.min_prob,
-    reparam_trick=config.reparam_trick
+    prior_stddev=math.sqrt(config.prior_var),
+    optimize_prior_mean=False,
+    optimize_prior_rho=False,
+    optimize_posterior_mean=True,
+    optimize_posterior_rho=True,
+    probability_threshold=config.min_prob,
+    normalize_surrogate_by_log_classes=True
 )
 bayesian_classifier = bayesian_classifier.to(device)
 posterior_optimizer = torch.optim.SGD(
@@ -195,6 +199,7 @@ def evaluate_bayesian_classifier():
         for x, y in test_loader:
             assert y.shape[0] == len(test_set)
             x, y = x.to(device), y.to(device)
+            x = x.view([x.shape[0], -1])
             probs = bayesian_classifier(x, 'MC')
             preds = probs.argmax(dim=-1)
             error = 1 - (y == preds).sum().float().div(y.shape[0]).item()
@@ -207,9 +212,10 @@ for i_epoch in tqdm(range(config.posterior_training_epochs)):
     corrects, totals = 0.0, 0.0
     for x, y in tqdm(posterior_train_loader, total=posterior_train_set_size // config.batch_size):
         x, y = x.to(device), y.to(device)
+        x = x.view([x.shape[0], -1])
 
         kl, surrogate, correct = bayesian_classifier.forward_train(x, y)
-        loss = bayesian_classifier.quad_bound(-surrogate, kl, posterior_train_set_size, config.delta)
+        loss = bayesian_classifier.quad_bound(surrogate, kl, posterior_train_set_size, config.delta)
         posterior_optimizer.zero_grad()
         loss.backward()
         posterior_optimizer.step()
@@ -233,7 +239,7 @@ for i_epoch in tqdm(range(config.posterior_training_epochs)):
         'loss_train': np.mean(losses),
         'error_train': 1 - corrects / totals,
         'kl_normalized_train': np.mean(kls) / posterior_train_set_size,
-        'risk_surrogate_train': -np.mean(surrogates),
+        'risk_surrogate_train': np.mean(surrogates),
         'error_test': error_test
     }
     wandb.log(log)

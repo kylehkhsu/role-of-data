@@ -320,7 +320,7 @@ for i_epoch in tqdm(range(config.posterior_variance_training_epochs)):
         'loss_train': np.mean(losses),
         'error_train': 1 - corrects / totals,
         'kl_normalized_train': np.mean(kls) / posterior_variance_train_set_size,
-        'risk_surrogate_train': -np.mean(surrogates),
+        'risk_surrogate_train': np.mean(surrogates),
         'error_test': error_test
     }
     wandb.log(log)

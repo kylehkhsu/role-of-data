@@ -218,7 +218,7 @@
 #         x, y = x.to(device), y.to(device)
 #
 #         kl, surrogate, correct = bmlp.forward_train(x, y)
-#         loss = bmlp.quad_bound(-surrogate, kl, posterior_train_set_size, config.delta)
+#         loss = bmlp.quad_bound(surrogate, kl, posterior_train_set_size, config.delta)
 #         posterior_optimizer.zero_grad()
 #         loss.backward()
 #         posterior_optimizer.step()
@@ -242,7 +242,7 @@
 #         'loss_train': np.mean(losses),
 #         'error_train': 1 - corrects / totals,
 #         'kl_normalized_train': np.mean(kls) / posterior_train_set_size,
-#         'risk_surrogate_train': -np.mean(surrogates),
+#         'risk_surrogate_train': np.mean(surrogates),
 #         'error_test': error_test
 #     }
 #     wandb.log(log)
