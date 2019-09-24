@@ -24,7 +24,7 @@ parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
 parser.add_argument('--learning_rate', type=float, default=1e-2)
 parser.add_argument('--momentum', type=float, default=0.95)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600]*2)
+parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600]*3)
 parser.add_argument('--n_epochs', type=int, default=256)
 parser.add_argument('--prior_var', type=float, default=0.01)
 parser.add_argument('--min_prob', type=float, default=1e-4)
@@ -109,8 +109,8 @@ for i_epoch in tqdm(range(config.n_epochs)):
     bayesian_classifier.train()
     kls = []
     surrogates = []
-    losses = []
-    bounds = []
+    surrogate_bounds = []
+    error_bounds = []
     corrects = 0
     totals = 0
     for x, y in tqdm(train_loader, total=len(train_set) // config.batch_size):
@@ -118,32 +118,32 @@ for i_epoch in tqdm(range(config.n_epochs)):
         x = x.view([x.shape[0], -1])
 
         kl, surrogate, correct = bayesian_classifier.forward_train(x, y)
-        loss = bayesian_classifier.quad_bound(surrogate, kl, train_set_size, config.delta)
+        surrogate_bound = bayesian_classifier.quad_bound(surrogate, kl, train_set_size, config.delta)
         optim.zero_grad()
-        loss.backward()
+        surrogate_bound.backward()
         optim.step()
 
         total = y.shape[0]
         error = 1 - correct / total
         with torch.no_grad():
-            bound = bayesian_classifier.quad_bound(error, kl, train_set_size, config.delta)
+            error_bound = bayesian_classifier.quad_bound(error, kl, train_set_size, config.delta)
 
         totals += total
         corrects += correct.item()
         kls.append(kl.item())
         surrogates.append(surrogate.item())
-        losses.append(loss.item())
-        bounds.append(bound.item())
+        surrogate_bounds.append(surrogate_bound.item())
+        error_bounds.append(error_bound.item())
 
     # eval
     acc_test = evaluate_bayesian_classifier(test_loader)
 
     log = {
-        'error_bound': np.mean(bounds),
-        'loss_train': np.mean(losses),
+        'error_bound': np.mean(error_bounds),
+        'surrogate_bound': np.mean(surrogate_bounds),
         'error_train': 1 - corrects / totals,
-        'kl_normalized_train': np.mean(kls) / train_set_size,
-        'risk_surrogate_train': np.mean(surrogates),
+        'kl_normalized': np.mean(kls) / train_set_size,
+        'surrogate_risk': np.mean(surrogates),
         'error_test': 1 - acc_test
     }
     pp.pprint(log)

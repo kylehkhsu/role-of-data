@@ -10,7 +10,11 @@ class MLP(nn.Module):
         n_in = n_input
         self.hidden_layers = nn.ModuleList()
         for i in range(len(hidden_layer_sizes)):
-            self.hidden_layers.append(nn.Linear(n_in, hidden_layer_sizes[i], bias=True))
+            layer = nn.Linear(n_in, hidden_layer_sizes[i], bias=True)
+            with torch.no_grad():
+                nn.init.normal_(layer.weight, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+                nn.init.normal_(layer.bias, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+            self.hidden_layers.append(layer)
             n_in = hidden_layer_sizes[i]
         self.output_layer = nn.Linear(n_in, n_output, bias=True)
 

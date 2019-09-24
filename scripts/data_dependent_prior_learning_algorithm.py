@@ -28,7 +28,7 @@ parser.add_argument('--prior_learning_rate', type=float, default=1e-2)
 parser.add_argument('--posterior_learning_rate', type=float, default=0.00001)
 parser.add_argument('--momentum', type=float, default=0.95)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600, 600])
+parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600] * 3)
 parser.add_argument('--prior_training_epochs', type=int, default=100)
 parser.add_argument('--posterior_training_epochs', type=int, default=256)
 parser.add_argument('--prior_var', type=float, default=1e-7)
@@ -91,7 +91,8 @@ posterior_train_loader = data.DataLoader(
 )
 test_loader = data.DataLoader(
     dataset=test_set,
-    batch_size=len(test_set)
+    batch_size=len(test_set),
+    num_workers=2
 )
 
 mlp = MLP(
@@ -208,38 +209,38 @@ def evaluate_bayesian_classifier():
 
 for i_epoch in tqdm(range(config.posterior_training_epochs)):
     bayesian_classifier.train()
-    kls, surrogates, losses, bounds = [], [], [], []
+    kls, surrogates, surrogate_bounds, error_bounds = [], [], [], []
     corrects, totals = 0.0, 0.0
     for x, y in tqdm(posterior_train_loader, total=posterior_train_set_size // config.batch_size):
         x, y = x.to(device), y.to(device)
         x = x.view([x.shape[0], -1])
 
         kl, surrogate, correct = bayesian_classifier.forward_train(x, y)
-        loss = bayesian_classifier.quad_bound(surrogate, kl, posterior_train_set_size, config.delta)
+        surrogate_bound = bayesian_classifier.quad_bound(surrogate, kl, posterior_train_set_size, config.delta)
         posterior_optimizer.zero_grad()
-        loss.backward()
+        surrogate_bound.backward()
         posterior_optimizer.step()
 
         total = y.shape[0]
         error = 1 - correct / total
         with torch.no_grad():
-            bound = bayesian_classifier.quad_bound(error, kl, posterior_train_set_size, config.delta)
+            error_bound = bayesian_classifier.quad_bound(error, kl, posterior_train_set_size, config.delta)
 
         totals += total
         corrects += correct.item()
         kls.append(kl.item())
         surrogates.append(surrogate.item())
-        losses.append(loss.item())
-        bounds.append(bound.item())
+        surrogate_bounds.append(surrogate_bound.item())
+        error_bounds.append(error_bound.item())
 
     error_test = evaluate_bayesian_classifier()
 
     log = {
-        'error_bound': np.mean(bounds),
-        'loss_train': np.mean(losses),
+        'error_bound': np.mean(error_bounds),
+        'surrogate_bound': np.mean(surrogate_bounds),
         'error_train': 1 - corrects / totals,
-        'kl_normalized_train': np.mean(kls) / posterior_train_set_size,
-        'risk_surrogate_train': np.mean(surrogates),
+        'kl_normalized': np.mean(kls) / posterior_train_set_size,
+        'surrogate_risk': np.mean(surrogates),
         'error_test': error_test
     }
     wandb.log(log)

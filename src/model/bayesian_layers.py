@@ -48,12 +48,14 @@ def finish_init(
     with torch.no_grad():   # we're modifying leaf variables with requires_grad=True in-place
         # initialize prior mean
         if w_prior_mean_init is None:
-            nn.init.normal_(bl.w_prior_mean, mean=0, std=bl.prior_stddev).clamp_(min=-2*bl.prior_stddev, max=2*bl.prior_stddev)
+            # nn.init.normal_(bl.w_prior_mean, mean=0, std=bl.prior_stddev).clamp_(min=-2*bl.prior_stddev, max=2*bl.prior_stddev)
+            nn.init.normal_(bl.w_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
         else:
             bl.w_prior_mean = bl.w_prior_mean.copy_(w_prior_mean_init)
 
         if b_prior_mean_init is None:
-            nn.init.normal_(bl.b_prior_mean, mean=0, std=bl.prior_stddev).clamp_(min=-2*bl.prior_stddev, max=2*bl.prior_stddev)
+            # nn.init.normal_(bl.b_prior_mean, mean=0, std=bl.prior_stddev).clamp_(min=-2*bl.prior_stddev, max=2*bl.prior_stddev)
+            nn.init.normal_(bl.b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
         else:
             bl.b_prior_mean = bl.b_prior_mean.copy_(b_prior_mean_init)
 
