@@ -16,13 +16,13 @@ import os
 pp = pprint.PrettyPrinter()
 wandb.init(project="pacbayes_opt",
            dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior_sgd/debug',
-           tags=['sgd'])
+           tags=['debug'])
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
-parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600, 600])
+parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600])
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--alpha', type=float, default=0.1)
 parser.add_argument('--prior_and_posterior_mean_learning_rate', type=float, default=1e-2)
@@ -151,7 +151,33 @@ if config.alpha != 0:
 # coupling
 mlp_prior_mean = deepcopy(mlp_posterior_mean).to(device)
 
-# optimize posterior mean
+# for the posterior mean, finish off the epoch of S with S \ S_alpha
+losses = []
+corrects, totals = 0.0, 0.0
+mlp_posterior_mean.train()
+for x, y in tqdm(posterior_variance_train_loader, total=posterior_variance_train_set_size // config.batch_size):
+    x, y = x.to(device), y.to(device)
+    probs = mlp_posterior_mean(x)
+    loss = mlp_posterior_mean.loss(probs, y)
+    posterior_mean_optimizer.zero_grad()
+    loss.backward()
+    posterior_mean_optimizer.step()
+
+    with torch.no_grad():
+        correct, total = mlp_posterior_mean.evaluate(probs, y)
+    losses.append(loss.item())
+    totals += total.item()
+    corrects += correct.item()
+error_train = 1 - corrects / totals
+error_test = evaluate_mlp(mlp_posterior_mean)
+log = {
+    'loss_posterior_mean_train': np.mean(losses),
+    'error_posterior_mean_train': error_train,
+    'error_posterior_mean_test': error_test.item()
+}
+pp.pprint(log)
+
+# finish optimizing posterior mean on S
 for i_epoch in tqdm(range(config.posterior_mean_training_epochs)):
     mlp_posterior_mean.train()
     losses = []

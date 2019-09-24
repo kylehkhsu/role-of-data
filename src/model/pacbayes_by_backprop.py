@@ -27,6 +27,7 @@ class BNNLinearLayer(nn.Module):
             W_posterior_mean_init=None,
             b_posterior_mean_init=None,
             optimize_posterior_mean=True,
+            perturbed_posterior_variance_init=False,
     ):
         super(BNNLinearLayer, self).__init__()
         self.n_input = n_input
@@ -190,7 +191,7 @@ class BMLP(nn.Module):
         return term1 + term2
 
     @staticmethod
-    def bottom_bound(risk, kl, dataset_size, delta):
+    def pinsker_bound(risk, kl, dataset_size, delta):
         B = (kl + math.log(2 * math.sqrt(dataset_size) / delta)).div(dataset_size)
         return risk + B.div(2).sqrt()
 
@@ -198,7 +199,7 @@ class BMLP(nn.Module):
     def inverted_kl_bound(risk, kl, dataset_size, delta):
         return torch.min(
             BMLP.quad_bound(risk, kl, dataset_size, delta),
-            BMLP.bottom_bound(risk, kl, dataset_size, delta)
+            BMLP.pinsker_bound(risk, kl, dataset_size, delta)
         )
 
 

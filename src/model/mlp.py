@@ -1,23 +1,24 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import ipdb
 
 class MLP(nn.Module):
     def __init__(self, n_input, n_output, hidden_layer_sizes):
         super(MLP, self).__init__()
-        assert len(hidden_layer_sizes) == 2
-        self.fc1 = nn.Linear(n_input, hidden_layer_sizes[0], bias=True)
-        self.fc2 = nn.Linear(hidden_layer_sizes[0], hidden_layer_sizes[1], bias=True)
-        self.fc3 = nn.Linear(hidden_layer_sizes[1], n_output, bias=True)
+        n_in = n_input
+        self.hidden_layers = nn.ModuleList()
+        for i in range(len(hidden_layer_sizes)):
+            self.hidden_layers.append(nn.Linear(n_in, hidden_layer_sizes[i], bias=True))
+            n_in = hidden_layer_sizes[i]
+        self.output_layer = nn.Linear(n_in, n_output, bias=True)
 
     def forward(self, x):
         x = x.view([x.shape[0], -1])
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = self.fc2(x)
-        x = F.relu(x)
-        x = self.fc3(x)
+        for hidden_layer in self.hidden_layers:
+            x = hidden_layer(x)
+            x = F.relu(x)
+        x = self.output_layer(x)
         x = F.softmax(x, dim=-1)
         return x
 
@@ -34,3 +35,11 @@ class MLP(nn.Module):
         correct = (predictions == y).sum().float()
         total = torch.tensor(y.shape[0])
         return correct, total
+
+
+if __name__ == '__main__':
+    mlp = MLP(784, 10, [600])
+    p = list(mlp.parameters())
+    x = torch.ones(3, 28, 28)
+    y = mlp(x)
+    ipdb.set_trace()
