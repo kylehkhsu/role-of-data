@@ -60,16 +60,16 @@ test_set = torchvision.datasets.MNIST(
     download=True
 )
 
-train_set_size = len(train_set)
-train_set_size_prior_mean = int(config.alpha * train_set_size)
-train_set_size_posterior_variance = train_set_size - train_set_size_prior_mean
+train_set_size_all = len(train_set)
+train_set_size_alpha = int(config.alpha * train_set_size_all)
+train_set_size_not_alpha = train_set_size_all - train_set_size_alpha
 
-train_set_prior_mean, train_set_posterior_variance = data.random_split(
-    train_set, [train_set_size_prior_mean, train_set_size_posterior_variance]
+train_set_alpha, train_set_not_alpha = data.random_split(
+    train_set, [train_set_size_alpha, train_set_size_not_alpha]
 )
 
 # S, the entire training set
-train_loader_posterior_mean = data.DataLoader(
+train_loader_all = data.DataLoader(
     dataset=train_set,
     batch_size=config.batch_size,
     shuffle=True,
@@ -78,7 +78,7 @@ train_loader_posterior_mean = data.DataLoader(
 )
 
 # S but with large batch size; for use in eval (no gradients)
-train_loader_eval = data.DataLoader(
+train_loader_eval_all = data.DataLoader(
     dataset=train_set,
     batch_size=len(train_set)//10,
     num_workers=2,
@@ -86,25 +86,30 @@ train_loader_eval = data.DataLoader(
 
 if config.alpha != 0:
     # S_alpha
-    train_loader_prior_mean = data.DataLoader(
-        dataset=train_set_prior_mean,
+    train_loader_alpha = data.DataLoader(
+        dataset=train_set_alpha,
         batch_size=config.batch_size,
         shuffle=True,
         drop_last=True,
         num_workers=2
     )
+    train_loader_eval_alpha = data.DataLoader(
+        dataset=train_set_alpha,
+        batch_size=train_set_size_alpha // 10,
+        num_workers=2
+    )
 
 # S \ S_alpha
-train_loader_posterior_variance = data.DataLoader(
-    dataset=train_set_posterior_variance,
+train_loader_not_alpha = data.DataLoader(
+    dataset=train_set_not_alpha,
     batch_size=config.batch_size,
     shuffle=True,
     drop_last=True,
     num_workers=2
 )
-train_loader_eval_posterior_variance = data.DataLoader(
-    dataset=train_set_posterior_variance,
-    batch_size=train_set_size_posterior_variance // 10,
+train_loader_eval_not_alpha = data.DataLoader(
+    dataset=train_set_not_alpha,
+    batch_size=train_set_size_not_alpha // 10,
     num_workers=2
 )
 
@@ -171,9 +176,9 @@ if config.alpha != 0:
     log = train_classifier_epoch(
         classifier=classifier_posterior_mean,
         optimizer=optimizer_posterior_mean,
-        train_loader=train_loader_prior_mean,
-        train_set_size=train_set_size_prior_mean,
-        train_loader_eval=train_loader_eval,
+        train_loader=train_loader_alpha,
+        train_set_size=train_set_size_alpha,
+        train_loader_eval=train_loader_eval_alpha,
         test_loader=test_loader
     )
     pp.pprint(log)
@@ -193,9 +198,9 @@ print('optimizing posterior mean for one epoch of S \ S_alpha')
 log = train_classifier_epoch(
     classifier=classifier_posterior_mean,
     optimizer=optimizer_posterior_mean,
-    train_loader=train_loader_posterior_variance,
-    train_set_size=train_set_size_posterior_variance,
-    train_loader_eval=train_loader_eval,
+    train_loader=train_loader_not_alpha,
+    train_set_size=train_set_size_not_alpha,
+    train_loader_eval=train_loader_eval_not_alpha,
     test_loader=test_loader
 )
 pp.pprint(log)
@@ -206,9 +211,9 @@ for i_epoch in tqdm(range(1, config.posterior_mean_training_epochs)):
     log = train_classifier_epoch(
         classifier=classifier_posterior_mean,
         optimizer=optimizer_posterior_mean,
-        train_loader=train_loader_posterior_mean,
-        train_set_size=train_set_size,
-        train_loader_eval=train_loader_eval,
+        train_loader=train_loader_all,
+        train_set_size=train_set_size_all,
+        train_loader_eval=train_loader_eval_all,
         test_loader=test_loader
     )
     log.update({
@@ -236,9 +241,9 @@ if config.alpha != 0:
         log = train_classifier_epoch(
             classifier=classifier_prior_mean,
             optimizer=optimizer_prior_mean,
-            train_loader=train_loader_prior_mean,
-            train_set_size=train_set_size_prior_mean,
-            train_loader_eval=train_loader_eval,
+            train_loader=train_loader_alpha,
+            train_set_size=train_set_size_alpha,
+            train_loader_eval=train_loader_eval_alpha,
             test_loader=test_loader
         )
 
@@ -353,9 +358,9 @@ for i_epoch in tqdm(range(config.posterior_variance_training_epochs)):
     log = train_bayesian_classifier_epoch(
         bayesian_classifier=bayesian_classifier,
         optimizer=optimizer_posterior_variance,
-        train_loader=train_loader_posterior_variance,
-        train_set_size=train_set_size_posterior_variance,
-        train_loader_eval=train_loader_eval_posterior_variance,
+        train_loader=train_loader_not_alpha,
+        train_set_size=train_set_size_not_alpha,
+        train_loader_eval=train_loader_eval_not_alpha,
         test_loader=test_loader
     )
 
