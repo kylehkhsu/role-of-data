@@ -146,7 +146,7 @@ def train_classifier_epoch(
     for x, y in tqdm(train_loader, total=train_set_size // config.batch_size):
         x, y = x.to(device), y.to(device)
         probs = classifier(x)
-        cross_entropy = classifier.cross_entropy(probs, y)
+        cross_entropy, _ = classifier.cross_entropy(probs, y)
         optimizer.zero_grad()
         cross_entropy.backward()
         optimizer.step()

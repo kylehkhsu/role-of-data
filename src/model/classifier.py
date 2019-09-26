@@ -16,7 +16,8 @@ class Classifier(nn.Module):
     def cross_entropy(probs, y):
         y = y.view([y.shape[0], -1])
         log_likelihood = probs.gather(1, y).log().mean()
-        return -log_likelihood
+        total = torch.tensor(y.shape[0])
+        return -log_likelihood, total
 
     @staticmethod
     def evaluate(probs, y):
@@ -36,11 +37,11 @@ class Classifier(nn.Module):
                 x, y = x.to(device), y.to(device)
                 probs = self(x)
                 correct, total = self.evaluate(probs, y)
-                cross_entropy = self.cross_entropy(probs, y)
+                cross_entropy_batch_mean, total = self.cross_entropy(probs, y)
 
                 corrects += correct.item()
                 totals += total.item()
-                cross_entropies += cross_entropy.item()
+                cross_entropies += (cross_entropy_batch_mean * total).item()
         error = 1 - corrects / totals
         cross_entropy = cross_entropies / totals
 
