@@ -37,6 +37,7 @@ parser.add_argument('--posterior_mean_training_epochs', type=int, default=256)
 parser.add_argument('--posterior_variance_training_epochs', type=int, default=256)
 parser.add_argument('--prior_mean_training_epochs', type=int, default=256)
 parser.add_argument('--prior_mean_patience', type=int, default=10)
+parser.add_argument('--posterior_mean_stopping_error_train', type=float, default=0.01)
 
 args = parser.parse_args()
 config = wandb.config
@@ -60,40 +61,53 @@ test_set = torchvision.datasets.MNIST(
 )
 
 train_set_size = len(train_set)
-prior_mean_train_set_size = int(config.alpha * train_set_size)
-posterior_variance_train_set_size = train_set_size - prior_mean_train_set_size
+train_set_size_prior_mean = int(config.alpha * train_set_size)
+train_set_size_posterior_variance = train_set_size - train_set_size_prior_mean
 
-prior_mean_train_set, posterior_variance_train_set = data.random_split(
-    train_set, [prior_mean_train_set_size, posterior_variance_train_set_size]
+train_set_prior_mean, train_set_posterior_variance = data.random_split(
+    train_set, [train_set_size_prior_mean, train_set_size_posterior_variance]
 )
 
-posterior_mean_train_loader = data.DataLoader(
+# S, the entire training set
+train_loader_posterior_mean = data.DataLoader(
     dataset=train_set,
     batch_size=config.batch_size,
     shuffle=True,
     drop_last=True,
     num_workers=2,
 )
-posterior_mean_train_loader_eval = data.DataLoader(
+
+# S but with large batch size; for use in eval (no gradients)
+train_loader_eval = data.DataLoader(
     dataset=train_set,
     batch_size=len(train_set)//10,
     num_workers=2,
 )
+
 if config.alpha != 0:
-    prior_mean_train_loader = data.DataLoader(
-        dataset=prior_mean_train_set,
+    # S_alpha
+    train_loader_prior_mean = data.DataLoader(
+        dataset=train_set_prior_mean,
         batch_size=config.batch_size,
         shuffle=True,
         drop_last=True,
         num_workers=2
     )
-posterior_variance_train_loader = data.DataLoader(
-    dataset=posterior_variance_train_set,
+
+# S \ S_alpha
+train_loader_posterior_variance = data.DataLoader(
+    dataset=train_set_posterior_variance,
     batch_size=config.batch_size,
     shuffle=True,
     drop_last=True,
     num_workers=2
 )
+train_loader_eval_posterior_variance = data.DataLoader(
+    dataset=train_set_posterior_variance,
+    batch_size=train_set_size_posterior_variance // 10,
+    num_workers=2
+)
+
 test_loader = data.DataLoader(
     dataset=test_set,
     batch_size=len(test_set),
@@ -110,7 +124,7 @@ classifier_posterior_mean = Classifier(
 )
 classifier_posterior_mean = classifier_posterior_mean.to(device)
 
-posterior_mean_optimizer = torch.optim.SGD(
+optimizer_posterior_mean = torch.optim.SGD(
     classifier_posterior_mean.parameters(),
     lr=config.prior_and_posterior_mean_learning_rate,
     momentum=config.momentum
@@ -118,42 +132,50 @@ posterior_mean_optimizer = torch.optim.SGD(
 classifier_posterior_mean_init = deepcopy(classifier_posterior_mean).to(device)
 
 
-def evaluate_classifier(classifier, loader):
-    classifier.eval()
-    with torch.no_grad():
-        for x, y in loader:
-            x, y = x.to(device), y.to(device)
-            probs = classifier(x)
-            correct, total = classifier.evaluate(probs, y)
-            error = 1 - correct / total
-    return error
+def train_classifier_epoch(
+        classifier,
+        optimizer,
+        train_loader,
+        train_set_size,
+        train_loader_eval,
+        test_loader
+):
+    training = classifier.training
 
-
-# train for one epoch on S_alpha
-if config.alpha != 0:
-    surrogate_bounds = []
-    corrects, totals = 0.0, 0.0
-    classifier_posterior_mean.train()
-    for x, y in tqdm(prior_mean_train_loader, total=prior_mean_train_set_size // config.batch_size):
+    classifier.train()
+    for x, y in tqdm(train_loader, total=train_set_size // config.batch_size):
         x, y = x.to(device), y.to(device)
-        probs = classifier_posterior_mean(x)
-        loss = classifier_posterior_mean.loss(probs, y)
-        posterior_mean_optimizer.zero_grad()
-        loss.backward()
-        posterior_mean_optimizer.step()
+        probs = classifier(x)
+        cross_entropy = classifier.cross_entropy(probs, y)
+        optimizer.zero_grad()
+        cross_entropy.backward()
+        optimizer.step()
 
-        with torch.no_grad():
-            correct, total = classifier_posterior_mean.evaluate(probs, y)
-        surrogate_bounds.append(loss.item())
-        totals += total.item()
-        corrects += correct.item()
-    error_train = 1 - corrects / totals
-    error_test = evaluate_classifier(classifier_posterior_mean, test_loader)
+    error_train, cross_entropy_train = classifier.evaluate_on_loader(train_loader_eval)
+    error_test, cross_entropy_test = classifier.evaluate_on_loader(test_loader)
+
     log = {
-        'loss_posterior_mean_train': np.mean(surrogate_bounds),
-        'error_posterior_mean_train': error_train,
-        'error_posterior_mean_test': error_test.item()
+        'cross_entropy_train': cross_entropy_train,
+        'cross_entropy_test': cross_entropy_test,
+        'error_train': error_train,
+        'error_test': error_test
     }
+
+    classifier.train(mode=training)
+
+    return log
+
+# train for one epoch on S_alpha; coupling
+if config.alpha != 0:
+    print('optimizing posterior and prior means for one epoch of S_alpha')
+    log = train_classifier_epoch(
+        classifier=classifier_posterior_mean,
+        optimizer=optimizer_posterior_mean,
+        train_loader=train_loader_prior_mean,
+        train_set_size=train_set_size_prior_mean,
+        train_loader_eval=train_loader_eval,
+        test_loader=test_loader
+    )
     pp.pprint(log)
 
 # coupling
@@ -167,72 +189,41 @@ def l2_between_mlps(mlp1, mlp2):
 
 
 # for the posterior mean, finish off the epoch of S with S \ S_alpha
-surrogate_bounds = []
-corrects, totals = 0.0, 0.0
-classifier_posterior_mean.train()
-for x, y in tqdm(posterior_variance_train_loader, total=posterior_variance_train_set_size // config.batch_size):
-    x, y = x.to(device), y.to(device)
-    probs = classifier_posterior_mean(x)
-    loss = classifier_posterior_mean.loss(probs, y)
-    posterior_mean_optimizer.zero_grad()
-    loss.backward()
-    posterior_mean_optimizer.step()
-
-    with torch.no_grad():
-        correct, total = classifier_posterior_mean.evaluate(probs, y)
-    surrogate_bounds.append(loss.item())
-    totals += total.item()
-    corrects += correct.item()
-error_train = 1 - corrects / totals
-error_test = evaluate_classifier(classifier_posterior_mean, test_loader)
-log = {
-    'loss_posterior_mean_train': np.mean(surrogate_bounds),
-    'error_posterior_mean_train': error_train,
-    'error_posterior_mean_test': error_test.item()
-}
+print('optimizing posterior mean for one epoch of S \ S_alpha')
+log = train_classifier_epoch(
+    classifier=classifier_posterior_mean,
+    optimizer=optimizer_posterior_mean,
+    train_loader=train_loader_posterior_variance,
+    train_set_size=train_set_size_posterior_variance,
+    train_loader_eval=train_loader_eval,
+    test_loader=test_loader
+)
 pp.pprint(log)
 
 # finish optimizing posterior mean on S
-for i_epoch in tqdm(range(config.posterior_mean_training_epochs)):
-    classifier_posterior_mean.train()
-    surrogate_bounds = []
-    corrects, totals = 0.0, 0.0
-    for x, y in tqdm(posterior_mean_train_loader, total=train_set_size // config.batch_size):
-        x, y = x.to(device), y.to(device)
-        probs = classifier_posterior_mean(x)
-        loss = classifier_posterior_mean.loss(probs, y)
-        posterior_mean_optimizer.zero_grad()
-        loss.backward()
-        posterior_mean_optimizer.step()
-
-        with torch.no_grad():
-            correct, total = classifier_posterior_mean.evaluate(probs, y)
-        surrogate_bounds.append(loss.item())
-        totals += total.item()
-        corrects += correct.item()
-
-    error_train_running = 1 - corrects / totals
-    error_test = evaluate_classifier(classifier_posterior_mean, test_loader)
-    error_train_end = evaluate_classifier(classifier_posterior_mean, posterior_mean_train_loader_eval)
-
-    log = {
-        'epoch_posterior_mean': i_epoch,
-        'loss_posterior_mean_train': np.mean(surrogate_bounds),
-        'error_posterior_mean_train': error_train_running,
-        'error_posterior_mean_test': error_test.item(),
-        'error_posterior_mean_train_end': error_train_end.item()
-    }
+print(f'optimizing posterior mean to error_train {config.posterior_mean_stopping_error_train}')
+for i_epoch in tqdm(range(1, config.posterior_mean_training_epochs)):
+    log = train_classifier_epoch(
+        classifier=classifier_posterior_mean,
+        optimizer=optimizer_posterior_mean,
+        train_loader=train_loader_posterior_mean,
+        train_set_size=train_set_size,
+        train_loader_eval=train_loader_eval,
+        test_loader=test_loader
+    )
+    log.update({
+        'epoch_posterior_mean': i_epoch
+    })
     pp.pprint(log)
 
-    if error_train_end.item() <= 0.01:
-        print('exited posterior mean training due to epoch train accuracy exceeding 0.99')
+    if log['error_train'] <= config.posterior_mean_stopping_error_train:
         break
 
 print(f'l2 distance between trained posterior mean and initial posterior mean: {l2_between_mlps(classifier_posterior_mean.net, classifier_posterior_mean_init.net)}')
 print(f'l2 distance between trained posterior mean and initial prior mean: {l2_between_mlps(classifier_posterior_mean.net,classifier_prior_mean.net)}')
 print(f'l2 distance between initial posterior mean and initial prior mean: {l2_between_mlps(classifier_posterior_mean_init.net, classifier_prior_mean.net)}')
 
-prior_mean_optimizer = torch.optim.SGD(
+optimizer_prior_mean = torch.optim.SGD(
     classifier_prior_mean.parameters(),
     lr=config.prior_and_posterior_mean_learning_rate,
     momentum=config.momentum
@@ -242,24 +233,15 @@ classifier_prior_mean_closest = deepcopy(classifier_prior_mean)
 i_epoch_closest = 0
 if config.alpha != 0:
     for i_epoch in tqdm(range(config.prior_mean_training_epochs)):
-        classifier_prior_mean.train()
-        surrogate_bounds = []
-        corrects, totals = 0.0, 0.0
-        for x, y in tqdm(prior_mean_train_loader, total=prior_mean_train_set_size // config.batch_size):
-            x, y = x.to(device), y.to(device)
-            probs = classifier_prior_mean(x)
-            loss = classifier_prior_mean.loss(probs, y)
-            prior_mean_optimizer.zero_grad()
-            loss.backward()
-            prior_mean_optimizer.step()
+        log = train_classifier_epoch(
+            classifier=classifier_prior_mean,
+            optimizer=optimizer_prior_mean,
+            train_loader=train_loader_prior_mean,
+            train_set_size=train_set_size_prior_mean,
+            train_loader_eval=train_loader_eval,
+            test_loader=test_loader
+        )
 
-            with torch.no_grad():
-                correct, total = classifier_prior_mean.evaluate(probs, y)
-            surrogate_bounds.append(loss.item())
-            totals += total.item()
-            corrects += correct.item()
-        error_train = 1 - corrects / totals
-        error_test = evaluate_classifier(classifier_prior_mean, test_loader)
         with torch.no_grad():
             l2 = l2_between_mlps(classifier_prior_mean.net, classifier_posterior_mean.net).item()
         if l2 < l2_closest:
@@ -267,14 +249,11 @@ if config.alpha != 0:
             l2_closest = l2
             i_epoch_closest = i_epoch
 
-        log = {
+        log.update({
             'epoch_prior_mean': i_epoch,
-            'loss_prior_mean_train': np.mean(surrogate_bounds),
-            'error_prior_mean_train': error_train,
-            'error_prior_mean_test': error_test.item(),
             'l2_prior_to_posterior': l2,
-            'l2_closest': l2_closest
-        }
+            'l2_prior_to_posterior_closest': l2_closest
+        })
         pp.pprint(log)
         if i_epoch - i_epoch_closest > config.prior_mean_patience:
             break
@@ -292,7 +271,7 @@ bayesian_classifier = make_bayesian_classifier_from_mlps(
 )
 
 bayesian_classifier = bayesian_classifier.to(device)
-posterior_variance_optimizer = torch.optim.SGD(
+optimizer_posterior_variance = torch.optim.SGD(
     bayesian_classifier.parameters(),
     lr=config.posterior_variance_learning_rate,
     momentum=config.momentum
@@ -312,44 +291,74 @@ def evaluate_bayesian_classifier(bayesian_classifier):
     return error
 
 
-for i_epoch in tqdm(range(config.posterior_variance_training_epochs)):
+def train_bayesian_classifier_epoch(
+        bayesian_classifier,
+        optimizer,
+        train_loader,
+        train_set_size,
+        train_loader_eval,
+        test_loader
+):
+    training = bayesian_classifier.training
     bayesian_classifier.train()
-    kls, surrogates, surrogate_bounds, error_bounds = [], [], [], []
-    corrects, totals = 0.0, 0.0
-    for x, y in tqdm(posterior_variance_train_loader, total=posterior_variance_train_set_size // config.batch_size):
+
+    for x, y in tqdm(train_loader, total=train_set_size // config.batch_size):
         x, y = x.to(device), y.to(device)
         x = x.view([x.shape[0], -1])
 
-        kl, surrogate, correct = bayesian_classifier.forward_train(x, y)
-        surrogate_bound = bayesian_classifier.inverted_kl_bound(surrogate, kl, posterior_variance_train_set_size,
-                                                                config.delta)
-        posterior_variance_optimizer.zero_grad()
+        kl, surrogate = bayesian_classifier.forward_train(x, y)
+        surrogate_bound = bayesian_classifier.inverted_kl_bound(
+            risk=surrogate,
+            kl=kl,
+            dataset_size=train_set_size,
+            delta=config.delta
+        )
+        optimizer.zero_grad()
         surrogate_bound.backward()
-        posterior_variance_optimizer.step()
+        optimizer.step()
+        kl_last = kl.clone().detach()
 
-        total = y.shape[0]
-        error = 1 - correct / total
-        with torch.no_grad():
-            error_bound = bayesian_classifier.inverted_kl_bound(error, kl, posterior_variance_train_set_size,
-                                                                config.delta)
-
-        totals += total
-        corrects += correct.item()
-        kls.append(kl.item())
-        surrogates.append(surrogate.item())
-        surrogate_bounds.append(surrogate_bound.item())
-        error_bounds.append(error_bound.item())
-
-    error_test = evaluate_bayesian_classifier(bayesian_classifier)
+    error_train, surrogate_train = bayesian_classifier.evaluate_on_loader(train_loader_eval)
+    error_test, surrogate_test = bayesian_classifier.evaluate_on_loader(test_loader)
+    with torch.no_grad():
+        error_bound = bayesian_classifier.inverted_kl_bound(
+            risk=error_train,
+            kl=kl_last,
+            dataset_size=train_set_size,
+            delta=config.delta
+        )
+        surrogate_bound = bayesian_classifier.inverted_kl_bound(
+            risk=surrogate_train,
+            kl=kl_last,
+            dataset_size=train_set_size,
+            delta=config.delta
+        )
 
     log = {
-        'error_bound': np.mean(error_bounds),
-        'surrogate_bound': np.mean(surrogate_bounds),
-        'error_train': 1 - corrects / totals,
-        'kl_normalized': np.mean(kls) / posterior_variance_train_set_size,
-        'surrogate_risk': np.mean(surrogates),
-        'error_test': error_test
+        'error_bound': error_bound.item(),
+        'error_train': error_train,
+        'error_test': error_test,
+        'surrogate_bound': surrogate_bound.item(),
+        'surrogate_train': surrogate_train,
+        'surrogate_test': surrogate_test,
+        'kl_normalized': kl_last.item() / train_set_size
     }
+
+    bayesian_classifier.train(mode=training)
+
+    return log
+    
+
+for i_epoch in tqdm(range(config.posterior_variance_training_epochs)):
+    log = train_bayesian_classifier_epoch(
+        bayesian_classifier=bayesian_classifier,
+        optimizer=optimizer_posterior_variance,
+        train_loader=train_loader_posterior_variance,
+        train_set_size=train_set_size_posterior_variance,
+        train_loader_eval=train_loader_eval_posterior_variance,
+        test_loader=test_loader
+    )
+
     wandb.log(log)
     pp.pprint(log)
 

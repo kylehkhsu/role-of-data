@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import math
 
 from .bayesian_layers import BayesianLinear
+from .classifier import Classifier
 from functools import partial
 import numpy as np
 import ipdb
@@ -38,27 +39,31 @@ class BayesianClassifier(nn.Module):
             return x
 
     def forward_train(self, x, y, n_samples=1):
-        y = y.view([y.shape[0], -1])
-
         running_kl = 0.0
         running_surrogate = 0.0
-        running_correct = 0.0
         for i in range(n_samples):
             probs, kl = self(x, 'forward')
-            n_classes = probs.shape[-1]
+            surrogate = BayesianClassifier.surrogate(
+                probs=probs,
+                y=y,
+                min_prob=self.min_prob,
+                normalize_surrogate_by_log_classes=self.normalize_surrogate_by_log_classes
+            )
 
-            log_likelihood = probs.gather(1, y).clamp(min=self.min_prob, max=1).log().mean()
-            surrogate = -log_likelihood
-            if self.normalize_surrogate_by_log_classes:
-                surrogate = surrogate.div(math.log(n_classes))
-            predictions = probs.argmax(dim=-1)
-            correct = (predictions == y.squeeze()).sum().float()
-
-            running_correct += correct
             running_kl += kl
             running_surrogate += surrogate
 
-        return running_kl / n_samples, running_surrogate / n_samples, running_correct / n_samples
+        return running_kl / n_samples, running_surrogate / n_samples
+
+    @staticmethod
+    def surrogate(probs, y, min_prob, normalize_surrogate_by_log_classes):
+        y = y.view([y.shape[0], -1])
+        log_likelihood = probs.gather(1, y).clamp(min=min_prob, max=1).log().mean()
+        surrogate = -log_likelihood
+        if normalize_surrogate_by_log_classes:
+            n_classes = probs.shape[-1]
+            surrogate = surrogate.div(math.log(n_classes))
+        return surrogate
 
     @staticmethod
     def quad_bound(risk, kl, dataset_size, delta):
@@ -68,12 +73,12 @@ class BayesianClassifier(nn.Module):
         sqrt2 = fraction.sqrt()
         return (sqrt1 + sqrt2).pow(2)
 
-    @staticmethod
-    def lambda_bound(risk, kl, dataset_size, delta, lam):
-        log_2_sqrt_n_over_delta = math.log(2 * math.sqrt(dataset_size) / delta)
-        term1 = risk.div(1 - lam / 2)
-        term2 = (kl + log_2_sqrt_n_over_delta).div(dataset_size * lam * (1 - lam / 2))
-        return term1 + term2
+    # @staticmethod
+    # def lambda_bound(risk, kl, dataset_size, delta, lam):
+    #     log_2_sqrt_n_over_delta = math.log(2 * math.sqrt(dataset_size) / delta)
+    #     term1 = risk.div(1 - lam / 2)
+    #     term2 = (kl + log_2_sqrt_n_over_delta).div(dataset_size * lam * (1 - lam / 2))
+    #     return term1 + term2
 
     @staticmethod
     def pinsker_bound(risk, kl, dataset_size, delta):
@@ -86,3 +91,30 @@ class BayesianClassifier(nn.Module):
             BayesianClassifier.quad_bound(risk, kl, dataset_size, delta),
             BayesianClassifier.pinsker_bound(risk, kl, dataset_size, delta)
         )
+
+    def evaluate_on_loader(self, loader):
+        training = self.training
+        self.eval()
+
+        with torch.no_grad():
+            corrects, totals, surrogates = 0.0, 0.0, 0.0
+            with torch.no_grad():
+                for x, y in loader:
+                    x, y = x.to(device), y.to(device)
+                    x = x.view([x.shape[0], -1])
+                    probs = self(x, 'MC')
+                    correct, total = Classifier.evaluate(probs, y)
+                    surrogate = BayesianClassifier.surrogate(
+                        probs=probs,
+                        y=y,
+                        min_prob=self.min_prob,
+                        normalize_surrogate_by_log_classes=self.normalize_surrogate_by_log_classes
+                    )
+                    corrects += correct.item()
+                    totals += total.item()
+                    surrogates += surrogate.item()
+            error = 1 - corrects / totals
+            surrogate = surrogates / totals
+
+        self.train(mode=training)
+        return error, surrogate

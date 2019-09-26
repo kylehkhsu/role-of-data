@@ -82,11 +82,21 @@ if config.alpha != 0:
         drop_last=True,
         num_workers=2
     )
+    prior_train_loader_eval = data.DataLoader(
+        dataset=prior_train_set,
+        batch_size=prior_train_set_size // 10,
+        num_workers=2
+    )
 posterior_train_loader = data.DataLoader(
     dataset=posterior_train_set,
     batch_size=config.batch_size,
     shuffle=True,
     drop_last=True,
+    num_workers=2
+)
+posterior_train_loader_eval = data.DataLoader(
+    dataset=posterior_train_set,
+    batch_size=posterior_train_set_size // 10,
     num_workers=2
 )
 test_loader = data.DataLoader(
@@ -112,11 +122,10 @@ prior_optimizer = torch.optim.SGD(
 )
 
 
-def evaluate_classifier():
+def evaluate_classifier(classifier, loader):
     classifier.eval()
     with torch.no_grad():
-        for x, y in test_loader:
-            assert y.shape[0] == len(test_set)
+        for x, y in loader:
             x, y = x.to(device), y.to(device)
             probs = classifier(x)
             correct, total = classifier.evaluate(probs, y)
@@ -151,8 +160,9 @@ if config.alpha != 0:
             classifier_posterior_mean_init = deepcopy(classifier).to('cpu')
             print('saved copy of classifier as classifier_posterior_mean_init')
 
-        error_train = 1 - corrects / totals
-        error_test = evaluate_classifier()
+        error_train_running = 1 - corrects / totals
+        error_test = evaluate_classifier(classifier, test_loader)
+        error_train = evaluate_classifier(classifier, prior_train_loader_eval)
 
         log = {
             'prior_training_epoch': i_epoch,
