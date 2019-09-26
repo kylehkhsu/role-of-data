@@ -32,7 +32,7 @@ parser.add_argument('--momentum', type=float, default=0.95)
 parser.add_argument('--prior_var', type=float, default=0.003)
 parser.add_argument('--min_prob', type=float, default=1e-4)
 parser.add_argument('--delta', type=float, default=0.05)
-parser.add_argument('--seed', type=int, default=42)
+parser.add_argument('--seed', type=int, default=43)
 parser.add_argument('--posterior_mean_training_epochs', type=int, default=256)
 parser.add_argument('--posterior_variance_training_epochs', type=int, default=256)
 parser.add_argument('--prior_mean_training_epochs', type=int, default=256)
@@ -74,6 +74,11 @@ posterior_mean_train_loader = data.DataLoader(
     drop_last=True,
     num_workers=2,
 )
+posterior_mean_train_loader_eval = data.DataLoader(
+    dataset=train_set,
+    batch_size=len(train_set)//10,
+    num_workers=2,
+)
 if config.alpha != 0:
     prior_mean_train_loader = data.DataLoader(
         dataset=prior_mean_train_set,
@@ -110,13 +115,13 @@ posterior_mean_optimizer = torch.optim.SGD(
     lr=config.prior_and_posterior_mean_learning_rate,
     momentum=config.momentum
 )
+classifier_posterior_mean_init = deepcopy(classifier_posterior_mean).to(device)
 
 
-def evaluate_classifier(classifier):
+def evaluate_classifier(classifier, loader):
     classifier.eval()
     with torch.no_grad():
-        for x, y in test_loader:
-            assert y.shape[0] == len(test_set)
+        for x, y in loader:
             x, y = x.to(device), y.to(device)
             probs = classifier(x)
             correct, total = classifier.evaluate(probs, y)
@@ -143,7 +148,7 @@ if config.alpha != 0:
         totals += total.item()
         corrects += correct.item()
     error_train = 1 - corrects / totals
-    error_test = evaluate_classifier(classifier_posterior_mean)
+    error_test = evaluate_classifier(classifier_posterior_mean, test_loader)
     log = {
         'loss_posterior_mean_train': np.mean(surrogate_bounds),
         'error_posterior_mean_train': error_train,
@@ -153,6 +158,13 @@ if config.alpha != 0:
 
 # coupling
 classifier_prior_mean = deepcopy(classifier_posterior_mean).to(device)
+
+
+def l2_between_mlps(mlp1, mlp2):
+    mlp1_vector = torch.cat([p.view(-1) for p in mlp1.parameters() if p.requires_grad])
+    mlp2_vector = torch.cat([p.view(-1) for p in mlp2.parameters() if p.requires_grad])
+    return (mlp1_vector - mlp2_vector).norm()
+
 
 # for the posterior mean, finish off the epoch of S with S \ S_alpha
 surrogate_bounds = []
@@ -172,7 +184,7 @@ for x, y in tqdm(posterior_variance_train_loader, total=posterior_variance_train
     totals += total.item()
     corrects += correct.item()
 error_train = 1 - corrects / totals
-error_test = evaluate_classifier(classifier_posterior_mean)
+error_test = evaluate_classifier(classifier_posterior_mean, test_loader)
 log = {
     'loss_posterior_mean_train': np.mean(surrogate_bounds),
     'error_posterior_mean_train': error_train,
@@ -198,25 +210,27 @@ for i_epoch in tqdm(range(config.posterior_mean_training_epochs)):
         surrogate_bounds.append(loss.item())
         totals += total.item()
         corrects += correct.item()
-    error_train = 1 - corrects / totals
-    error_test = evaluate_classifier(classifier_posterior_mean)
+
+    error_train_running = 1 - corrects / totals
+    error_test = evaluate_classifier(classifier_posterior_mean, test_loader)
+    error_train_end = evaluate_classifier(classifier_posterior_mean, posterior_mean_train_loader_eval)
 
     log = {
         'epoch_posterior_mean': i_epoch,
         'loss_posterior_mean_train': np.mean(surrogate_bounds),
-        'error_posterior_mean_train': error_train,
-        'error_posterior_mean_test': error_test.item()
+        'error_posterior_mean_train': error_train_running,
+        'error_posterior_mean_test': error_test.item(),
+        'error_posterior_mean_train_end': error_train_end.item()
     }
     pp.pprint(log)
-    if error_train <= 0.01:
+
+    if error_train_end.item() <= 0.01:
+        print('exited posterior mean training due to epoch train accuracy exceeding 0.99')
         break
 
-
-def l2_between_mlps(mlp1, mlp2):
-    mlp1_vector = torch.cat([p.view(-1) for p in mlp1.parameters()])
-    mlp2_vector = torch.cat([p.view(-1) for p in mlp2.parameters()])
-    return (mlp1_vector - mlp2_vector).norm()
-
+print(f'l2 distance between trained posterior mean and initial posterior mean: {l2_between_mlps(classifier_posterior_mean.net, classifier_posterior_mean_init.net)}')
+print(f'l2 distance between trained posterior mean and initial prior mean: {l2_between_mlps(classifier_posterior_mean.net,classifier_prior_mean.net)}')
+print(f'l2 distance between initial posterior mean and initial prior mean: {l2_between_mlps(classifier_posterior_mean_init.net, classifier_prior_mean.net)}')
 
 prior_mean_optimizer = torch.optim.SGD(
     classifier_prior_mean.parameters(),
@@ -245,7 +259,7 @@ if config.alpha != 0:
             totals += total.item()
             corrects += correct.item()
         error_train = 1 - corrects / totals
-        error_test = evaluate_classifier(classifier_prior_mean)
+        error_test = evaluate_classifier(classifier_prior_mean, test_loader)
         with torch.no_grad():
             l2 = l2_between_mlps(classifier_prior_mean.net, classifier_posterior_mean.net).item()
         if l2 < l2_closest:
@@ -307,7 +321,8 @@ for i_epoch in tqdm(range(config.posterior_variance_training_epochs)):
         x = x.view([x.shape[0], -1])
 
         kl, surrogate, correct = bayesian_classifier.forward_train(x, y)
-        surrogate_bound = bayesian_classifier.inverted_kl_bound(surrogate, kl, posterior_variance_train_set_size, config.delta)
+        surrogate_bound = bayesian_classifier.inverted_kl_bound(surrogate, kl, posterior_variance_train_set_size,
+                                                                config.delta)
         posterior_variance_optimizer.zero_grad()
         surrogate_bound.backward()
         posterior_variance_optimizer.step()
@@ -315,7 +330,8 @@ for i_epoch in tqdm(range(config.posterior_variance_training_epochs)):
         total = y.shape[0]
         error = 1 - correct / total
         with torch.no_grad():
-            error_bound = bayesian_classifier.inverted_kl_bound(error, kl, posterior_variance_train_set_size, config.delta)
+            error_bound = bayesian_classifier.inverted_kl_bound(error, kl, posterior_variance_train_set_size,
+                                                                config.delta)
 
         totals += total
         corrects += correct.item()
