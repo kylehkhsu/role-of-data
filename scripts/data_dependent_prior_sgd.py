@@ -76,7 +76,7 @@ posterior_mean_train_loader = data.DataLoader(
 )
 posterior_mean_train_loader_eval = data.DataLoader(
     dataset=train_set,
-    batch_size=len(train_set)//10,
+    batch_size=len(train_set),
     num_workers=2,
 )
 if config.alpha != 0:
