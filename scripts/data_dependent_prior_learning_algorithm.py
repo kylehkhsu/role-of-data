@@ -17,7 +17,7 @@ import os
 pp = pprint.PrettyPrinter()
 wandb.init(project="pacbayes_opt",
            dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior/',
-           tags=['debug'])
+           tags=['reproduce'])
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 

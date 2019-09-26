@@ -24,9 +24,9 @@ def layer_kl(w_posterior_mean, w_posterior_rho, w_prior_mean, w_prior_rho,
              b_posterior_mean, b_posterior_rho, b_prior_mean, b_prior_rho):
     """KL[q(w|\theta) || p(w)]"""
     w_kl = kl_between_gaussians(
-        w_posterior_mean, 
-        F.softplus(w_posterior_rho).pow(2), 
-        w_prior_mean, 
+        w_posterior_mean,
+        F.softplus(w_posterior_rho).pow(2),
+        w_prior_mean,
         F.softplus(w_prior_rho).pow(2)
     )
     b_kl = kl_between_gaussians(
@@ -44,18 +44,21 @@ def finish_init(
         b_prior_mean_init,
         w_posterior_mean_init,
         b_posterior_mean_init,
+        init_std
 ):
-    with torch.no_grad():   # we're modifying leaf variables with requires_grad=True in-place
+    with torch.no_grad():  # we're modifying leaf variables with requires_grad=True in-place
         # initialize prior mean
         if w_prior_mean_init is None:
             # nn.init.normal_(bl.w_prior_mean, mean=0, std=bl.prior_stddev).clamp_(min=-2*bl.prior_stddev, max=2*bl.prior_stddev)
-            nn.init.normal_(bl.w_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+            # nn.init.normal_(bl.w_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+            nn.init.normal_(bl.w_prior_mean, mean=0, std=init_std).clamp_(min=-2 * init_std, max=2 * init_std)
         else:
             bl.w_prior_mean = bl.w_prior_mean.copy_(w_prior_mean_init)
 
         if b_prior_mean_init is None:
             # nn.init.normal_(bl.b_prior_mean, mean=0, std=bl.prior_stddev).clamp_(min=-2*bl.prior_stddev, max=2*bl.prior_stddev)
-            nn.init.normal_(bl.b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+            # nn.init.normal_(bl.b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+            nn.init.zeros_(bl.b_prior_mean)
         else:
             bl.b_prior_mean = bl.b_prior_mean.copy_(b_prior_mean_init)
 
@@ -137,6 +140,7 @@ class BayesianLinear(nn.Module):
                     b_prior_mean_init=b_prior_mean_init,
                     w_posterior_mean_init=w_posterior_mean_init,
                     b_posterior_mean_init=b_posterior_mean_init,
+                    init_std=1 / math.sqrt(in_features)
                     )
         self.activation = None
         if activation == 'relu':
@@ -192,6 +196,7 @@ if __name__ == '__main__':
         summary = [(name, p.shape, p.requires_grad) for name, p in bayesian_linear.named_parameters()]
         print(summary)
 
+
     def test_kl():
         mean = torch.Tensor([3.0])
         var = torch.Tensor([5.0])
@@ -208,6 +213,7 @@ if __name__ == '__main__':
         # kl2 = torch.log(q_var.sqrt() / p_var.sqrt()) + (p_var + (p_mean - q_mean).pow(2)) / (2 * q_var) - 0.5
         # assert torch.isclose(kl, kl2)
         print(kl.shape)
+
 
     test_bayesian_linear()
     # test_kl()
