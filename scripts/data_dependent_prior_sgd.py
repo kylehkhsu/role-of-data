@@ -281,7 +281,7 @@ if config.alpha != 0:
 
 bayesian_classifier = make_bayesian_classifier_from_mlps(
     mlp_posterior_mean_init=classifier_posterior_mean.net,
-    mlp_prior_mean=classifier_prior_mean.net,
+    mlp_prior_mean=classifier_prior_mean_closest.net,
     prior_stddev=math.sqrt(config.prior_var),
     optimize_prior_mean=False,
     optimize_prior_rho=False,
