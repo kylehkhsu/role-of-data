@@ -26,23 +26,16 @@ class BayesianClassifier(nn.Module):
         self.normalize_surrogate_by_log_classes = normalize_surrogate_by_log_classes
 
     def forward(self, x, mode):
-        if mode == 'forward':
-            net_kl = 0.0
-            for layer in self.layers:
-                x, layer_kl = layer(x, mode)
-                net_kl += layer_kl
-
-            return x, net_kl
-        else:
-            for layer in self.layers:
-                x = layer(x, mode)
-            return x
+        for layer in self.layers:
+            x = layer(x, mode)
+        return x
 
     def forward_train(self, x, y, n_samples=1):
         running_kl = 0.0
         running_surrogate = 0.0
         for i in range(n_samples):
-            probs, kl = self(x, 'forward')
+            probs = self(x, 'MC')
+            kl = self.kl()
             surrogate = BayesianClassifier.surrogate(
                 probs=probs,
                 y=y,
@@ -54,6 +47,12 @@ class BayesianClassifier(nn.Module):
             running_surrogate += surrogate
 
         return running_kl / n_samples, running_surrogate / n_samples
+
+    def kl(self):
+        net_kl = 0.0
+        for layer in self.layers:
+            net_kl += layer.kl()
+        return net_kl
 
     @staticmethod
     def surrogate(probs, y, min_prob, normalize_surrogate_by_log_classes):

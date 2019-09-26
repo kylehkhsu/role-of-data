@@ -102,10 +102,10 @@ def train_bayesian_classifier_epoch(
         surrogate_bound.backward()
         optimizer.step()
 
-    # TODO: re-compute kl
     error_train, surrogate_train = bayesian_classifier.evaluate_on_loader(train_loader_eval)
     error_test, surrogate_test = bayesian_classifier.evaluate_on_loader(test_loader)
     with torch.no_grad():
+        kl = bayesian_classifier.kl()
         error_bound = bayesian_classifier.inverted_kl_bound(
             risk=error_train,
             kl=kl,

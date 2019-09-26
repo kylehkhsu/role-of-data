@@ -151,7 +151,7 @@ class BayesianLinear(nn.Module):
             raise ValueError
 
     def forward(self, x, mode):
-        assert mode in ['forward', 'MAP', 'MC']
+        assert mode in ['MAP', 'MC']
         assert x.dim() == 2
 
         if mode == 'MAP':
@@ -164,12 +164,11 @@ class BayesianLinear(nn.Module):
         if mode == 'MC':
             return z
 
-        kl = layer_kl(
+    def kl(self):
+        return layer_kl(
             self.w_posterior_mean, self.w_posterior_rho, self.w_prior_mean, self.w_prior_rho,
             self.b_posterior_mean, self.b_posterior_rho, self.b_prior_mean, self.b_prior_rho
         )
-
-        return z, kl
 
 
 if __name__ == '__main__':
