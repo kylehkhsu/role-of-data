@@ -48,7 +48,7 @@ class BayesianClassifier(nn.Module):
                 y=y,
                 min_prob=self.min_prob,
                 normalize_surrogate_by_log_classes=self.normalize_surrogate_by_log_classes
-            )
+            ).mean()
 
             running_kl += kl
             running_surrogate += surrogate
@@ -58,7 +58,7 @@ class BayesianClassifier(nn.Module):
     @staticmethod
     def surrogate(probs, y, min_prob, normalize_surrogate_by_log_classes):
         y = y.view([y.shape[0], -1])
-        log_likelihood = probs.gather(1, y).clamp(min=min_prob, max=1).log().mean()
+        log_likelihood = probs.gather(1, y).clamp(min=min_prob, max=1).log()
         surrogate = -log_likelihood
         if normalize_surrogate_by_log_classes:
             n_classes = probs.shape[-1]
@@ -96,25 +96,24 @@ class BayesianClassifier(nn.Module):
         training = self.training
         self.eval()
 
+        corrects, totals, surrogates = 0.0, 0.0, 0.0
         with torch.no_grad():
-            corrects, totals, surrogates = 0.0, 0.0, 0.0
-            with torch.no_grad():
-                for x, y in loader:
-                    x, y = x.to(device), y.to(device)
-                    x = x.view([x.shape[0], -1])
-                    probs = self(x, 'MC')
-                    correct, total = Classifier.evaluate(probs, y)
-                    surrogate = BayesianClassifier.surrogate(
-                        probs=probs,
-                        y=y,
-                        min_prob=self.min_prob,
-                        normalize_surrogate_by_log_classes=self.normalize_surrogate_by_log_classes
-                    )
-                    corrects += correct.item()
-                    totals += total.item()
-                    surrogates += surrogate.item()
-            error = 1 - corrects / totals
-            surrogate = surrogates / totals
+            for x, y in loader:
+                x, y = x.to(device), y.to(device)
+                x = x.view([x.shape[0], -1])
+                probs = self(x, 'MC')
+                correct, total = Classifier.evaluate(probs, y)
+                surrogate_batch = BayesianClassifier.surrogate(
+                    probs=probs,
+                    y=y,
+                    min_prob=self.min_prob,
+                    normalize_surrogate_by_log_classes=self.normalize_surrogate_by_log_classes
+                )
+                corrects += correct.item()
+                totals += total.item()
+                surrogates += surrogate_batch.sum().item()
+        error = 1 - corrects / totals
+        surrogate = surrogates / totals
 
         self.train(mode=training)
         return error, surrogate

@@ -14,10 +14,10 @@ class Classifier(nn.Module):
 
     @staticmethod
     def cross_entropy(probs, y):
+        """Returns cross entropy between probs and y, of the same shape of probs"""
         y = y.view([y.shape[0], -1])
-        log_likelihood = probs.gather(1, y).log().mean()
-        total = torch.tensor(y.shape[0])
-        return -log_likelihood, total
+        log_likelihood = probs.gather(1, y).log()
+        return -log_likelihood
 
     @staticmethod
     def evaluate(probs, y):
@@ -37,11 +37,11 @@ class Classifier(nn.Module):
                 x, y = x.to(device), y.to(device)
                 probs = self(x)
                 correct, total = self.evaluate(probs, y)
-                cross_entropy_batch_mean, total = self.cross_entropy(probs, y)
+                cross_entropy_batch = self.cross_entropy(probs, y)
 
                 corrects += correct.item()
                 totals += total.item()
-                cross_entropies += (cross_entropy_batch_mean * total).item()
+                cross_entropies += cross_entropy_batch.sum().item()
         error = 1 - corrects / totals
         cross_entropy = cross_entropies / totals
 
