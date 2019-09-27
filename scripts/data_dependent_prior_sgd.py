@@ -30,7 +30,7 @@ def parse_args():
     parser.add_argument('--prior_variance_init', type=float, default=0.003)
     parser.add_argument('--prob_threshold', type=float, default=1e-4)
     parser.add_argument('--delta', type=float, default=0.05)
-    parser.add_argument('--seed', type=int, default=43)
+    parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--n_epoch_posterior_mean', type=int, default=256)
     parser.add_argument('--n_epoch_posterior_variance', type=int, default=256)
     parser.add_argument('--n_epoch_prior_mean', type=int, default=256)
