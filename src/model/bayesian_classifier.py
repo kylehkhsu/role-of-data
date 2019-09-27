@@ -16,17 +16,18 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class BayesianClassifier(nn.Module):
-    def __init__(self, min_prob, normalize_surrogate_by_log_classes, *layers):
+    def __init__(self, min_prob, normalize_surrogate_by_log_classes, *bayesian_layers):
         super(BayesianClassifier, self).__init__()
-        for i_layer, layer in enumerate(layers):
-            self.add_module(f'layer{i_layer}', layer)
+        for i_layer, layer in enumerate(bayesian_layers):
+            self.add_module(f'bayesian_layer{i_layer}', layer)
 
-        self.layers = [module for name, module in self.named_modules() if 'layer' in name]
+        # TODO: test if 'layer' in name condition yields expected behavior
+        self.bayesian_layers = [module for name, module in self.named_modules() if 'bayesian_layer' in name]
         self.min_prob = min_prob
         self.normalize_surrogate_by_log_classes = normalize_surrogate_by_log_classes
 
     def forward(self, x, mode):
-        for layer in self.layers:
+        for layer in self.bayesian_layers:
             x = layer(x, mode)
         return x
 
@@ -50,7 +51,7 @@ class BayesianClassifier(nn.Module):
 
     def kl(self):
         net_kl = 0.0
-        for layer in self.layers:
+        for layer in self.bayesian_layers:
             net_kl += layer.kl()
         return net_kl
 
@@ -99,7 +100,6 @@ class BayesianClassifier(nn.Module):
         with torch.no_grad():
             for x, y in loader:
                 x, y = x.to(device), y.to(device)
-                x = x.view([x.shape[0], -1])
                 probs = self(x, 'MC')
                 correct, total = Classifier.evaluate(probs, y)
                 surrogate_batch = BayesianClassifier.surrogate(

@@ -5,8 +5,9 @@ import argparse
 import numpy as np
 import ipdb
 from src.model.mlp import MLP
+from src.model.cnn import LeNet
 from src.model.classifier import Classifier
-from src.model.makers import make_bayesian_classifier_from_mlps
+from src.model.makers import make_bayesian_classifier_from_mlps, make_bayesian_classifier_from_lenets
 from tqdm import tqdm
 import pprint
 from copy import deepcopy
@@ -21,7 +22,8 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
-    parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600])
+    parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600],
+                        help='affects mlp only and not lenet')
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--alpha', type=float, default=0.5)
     parser.add_argument('--learning_rate_prior_and_posterior_mean', type=float, default=1e-2)
@@ -30,12 +32,15 @@ def parse_args():
     parser.add_argument('--prior_variance_init', type=float, default=0.003)
     parser.add_argument('--prob_threshold', type=float, default=1e-4)
     parser.add_argument('--delta', type=float, default=0.05)
-    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--seed', type=int, default=44)
     parser.add_argument('--n_epoch_posterior_mean', type=int, default=256)
     parser.add_argument('--n_epoch_posterior_variance', type=int, default=256)
     parser.add_argument('--n_epoch_prior_mean', type=int, default=256)
-    parser.add_argument('--prior_mean_patience', type=int, default=10)
+    parser.add_argument('--prior_mean_patience', type=int, default=3)
     parser.add_argument('--posterior_mean_stopping_error_train', type=float, default=0.01)
+    parser.add_argument('--dataset', type=str, default='mnist')
+    parser.add_argument('--net_type', type=str, default='mlp',
+                        help='mlp or lenet')
 
     return parser.parse_args()
 
@@ -89,7 +94,6 @@ def train_bayesian_classifier_epoch(
 
     for x, y in tqdm(train_loader, total=train_set_size // config.batch_size):
         x, y = x.to(device), y.to(device)
-        x = x.view([x.shape[0], -1])
 
         kl, surrogate = bayesian_classifier.forward_train(x, y)
         surrogate_bound = bayesian_classifier.inverted_kl_bound(
@@ -151,19 +155,22 @@ def main(args):
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
 
-    train_set = torchvision.datasets.MNIST(
-        root=config.dataset_path,
-        train=True,
-        transform=torchvision.transforms.ToTensor(),
-        download=True
-    )
+    if config.dataset == 'mnist':
+        train_set = torchvision.datasets.MNIST(
+            root=config.dataset_path,
+            train=True,
+            transform=torchvision.transforms.ToTensor(),
+            download=True
+        )
 
-    test_set = torchvision.datasets.MNIST(
-        root=config.dataset_path,
-        train=False,
-        transform=torchvision.transforms.ToTensor(),
-        download=True
-    )
+        test_set = torchvision.datasets.MNIST(
+            root=config.dataset_path,
+            train=False,
+            transform=torchvision.transforms.ToTensor(),
+            download=True
+        )
+    else:
+        raise ValueError
 
     train_set_size_all = len(train_set)
     train_set_size_alpha = int(config.alpha * train_set_size_all)
@@ -178,7 +185,6 @@ def main(args):
         dataset=train_set,
         batch_size=config.batch_size,
         shuffle=True,
-        drop_last=True,
         num_workers=2,
     )
 
@@ -195,7 +201,6 @@ def main(args):
             dataset=train_set_alpha,
             batch_size=config.batch_size,
             shuffle=True,
-            drop_last=True,
             num_workers=2
         )
         train_loader_eval_alpha = data.DataLoader(
@@ -209,7 +214,6 @@ def main(args):
         dataset=train_set_not_alpha,
         batch_size=config.batch_size,
         shuffle=True,
-        drop_last=True,
         num_workers=2
     )
     train_loader_eval_not_alpha = data.DataLoader(
@@ -224,13 +228,21 @@ def main(args):
         num_workers=2
     )
 
-    mlp_posterior_mean = MLP(
-        n_input=784,
-        n_output=10,
-        hidden_layer_sizes=config.hidden_layer_sizes
-    )
+    if config.net_type == 'mlp':
+        net_posterior_mean = MLP(
+            n_input=784,
+            n_output=10,
+            hidden_layer_sizes=config.hidden_layer_sizes
+        )
+    elif config.net_type == 'lenet':
+        net_posterior_mean = LeNet(
+            input_shape=[1, 28, 28],
+            n_output=10
+        )
+    else:
+        raise ValueError
     classifier_posterior_mean = Classifier(
-        net=mlp_posterior_mean
+        net=net_posterior_mean
     )
     classifier_posterior_mean = classifier_posterior_mean.to(device)
 
@@ -331,17 +343,32 @@ def main(args):
             if i_epoch - i_epoch_closest > config.prior_mean_patience:
                 break
 
-    bayesian_classifier = make_bayesian_classifier_from_mlps(
-        mlp_posterior_mean_init=classifier_posterior_mean.net,
-        mlp_prior_mean=classifier_prior_mean_closest.net,
-        prior_stddev=math.sqrt(config.prior_variance_init),
-        optimize_prior_mean=False,
-        optimize_prior_rho=False,
-        optimize_posterior_mean=False,
-        optimize_posterior_rho=True,
-        probability_threshold=config.prob_threshold,
-        normalize_surrogate_by_log_classes=True
-    )
+    if config.net_type == 'mlp':
+        bayesian_classifier = make_bayesian_classifier_from_mlps(
+            mlp_posterior_mean_init=classifier_posterior_mean.net,
+            mlp_prior_mean=classifier_prior_mean_closest.net,
+            prior_stddev=math.sqrt(config.prior_variance_init),
+            optimize_prior_mean=False,
+            optimize_prior_rho=False,
+            optimize_posterior_mean=False,
+            optimize_posterior_rho=True,
+            probability_threshold=config.prob_threshold,
+            normalize_surrogate_by_log_classes=True
+        )
+    elif config.net_type == 'lenet':
+        bayesian_classifier = make_bayesian_classifier_from_lenets(
+            net_posterior_mean_init=classifier_posterior_mean.net,
+            net_prior_mean=classifier_prior_mean_closest.net,
+            prior_stddev=math.sqrt(config.prior_variance_init),
+            optimize_prior_mean=False,
+            optimize_prior_rho=False,
+            optimize_posterior_mean=False,
+            optimize_posterior_rho=True,
+            probability_threshold=config.prob_threshold,
+            normalize_surrogate_by_log_classes=True
+        )
+    else:
+        raise ValueError
 
     bayesian_classifier = bayesian_classifier.to(device)
     optimizer_posterior_variance = torch.optim.SGD(
@@ -350,6 +377,11 @@ def main(args):
         momentum=config.momentum
     )
 
+    error, surrogate = bayesian_classifier.evaluate_on_loader(train_loader_all)
+    pp.pprint('bayesian classifier evaluation')
+    pp.pprint({'error_train': error, 'surrogate_train': surrogate})
+
+    pp.pprint('bayesian classifier bound optimization')
     for _ in tqdm(range(config.n_epoch_posterior_variance)):
         log = train_bayesian_classifier_epoch(
             bayesian_classifier=bayesian_classifier,

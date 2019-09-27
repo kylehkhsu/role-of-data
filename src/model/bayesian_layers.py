@@ -44,21 +44,18 @@ def finish_init(
         b_prior_mean_init,
         w_posterior_mean_init,
         b_posterior_mean_init,
-        init_std
+        w_mean_init_fn_,
+        b_mean_init_fn_
 ):
     with torch.no_grad():  # we're modifying leaf variables with requires_grad=True in-place
         # initialize prior mean
         if w_prior_mean_init is None:
-            # nn.init.normal_(bl.w_prior_mean, mean=0, std=bl.prior_stddev).clamp_(min=-2*bl.prior_stddev, max=2*bl.prior_stddev)
-            # nn.init.normal_(bl.w_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
-            nn.init.normal_(bl.w_prior_mean, mean=0, std=init_std).clamp_(min=-2 * init_std, max=2 * init_std)
+            w_mean_init_fn_(bl.w_prior_mean)
         else:
             bl.w_prior_mean = bl.w_prior_mean.copy_(w_prior_mean_init)
 
         if b_prior_mean_init is None:
-            # nn.init.normal_(bl.b_prior_mean, mean=0, std=bl.prior_stddev).clamp_(min=-2*bl.prior_stddev, max=2*bl.prior_stddev)
-            # nn.init.normal_(bl.b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
-            nn.init.zeros_(bl.b_prior_mean)
+            b_mean_init_fn_(bl.b_prior_mean)
         else:
             bl.b_prior_mean = bl.b_prior_mean.copy_(b_prior_mean_init)
 
@@ -135,12 +132,26 @@ class BayesianLinear(nn.Module):
         self.w_prior_mean = nn.Parameter(torch.Tensor(out_features, in_features))
         self.b_prior_mean = nn.Parameter(torch.Tensor(out_features))
 
+        def w_mean_init_fn_(w_mean):
+            std = 1 / math.sqrt(in_features)
+            nn.init.normal_(w_mean, mean=0., std=std).clamp_(min=-2*std, max=2*std)
+
+        # nn.init.normal_(bl.w_prior_mean, mean=0, std=bl.prior_stddev).clamp_(min=-2*bl.prior_stddev, max=2*bl.prior_stddev)
+        # nn.init.normal_(bl.w_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+        # nn.init.normal_(bl.w_prior_mean, mean=0, std=mean_init_std).clamp_(min=-2 * mean_init_std,
+        #                                                                    max=2 * mean_init_std)
+
+        # nn.init.normal_(bl.b_prior_mean, mean=0, std=bl.prior_stddev).clamp_(min=-2*bl.prior_stddev, max=2*bl.prior_stddev)
+        # nn.init.normal_(bl.b_prior_mean, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+        b_mean_init_fn_ = nn.init.zeros_
+
         finish_init(self,
                     w_prior_mean_init=w_prior_mean_init,
                     b_prior_mean_init=b_prior_mean_init,
                     w_posterior_mean_init=w_posterior_mean_init,
                     b_posterior_mean_init=b_posterior_mean_init,
-                    init_std=1 / math.sqrt(in_features)
+                    w_mean_init_fn_=w_mean_init_fn_,
+                    b_mean_init_fn_=b_mean_init_fn_
                     )
         self.activation = None
         if activation == 'relu':
@@ -152,7 +163,7 @@ class BayesianLinear(nn.Module):
 
     def forward(self, x, mode):
         assert mode in ['MAP', 'MC']
-        assert x.dim() == 2
+        x = x.view([x.shape[0], -1])    # from N,C,H,W to N,C*H*W
 
         if mode == 'MAP':
             return self.activation(F.linear(x, self.w_posterior_mean, self.b_posterior_mean))
@@ -170,6 +181,93 @@ class BayesianLinear(nn.Module):
             self.b_posterior_mean, self.b_posterior_rho, self.b_prior_mean, self.b_prior_rho
         )
 
+
+class BayesianConv2d(nn.Module):
+    def __init__(
+            self,
+            in_channels,
+            out_channels,
+            kernel_size: tuple,
+            activation,
+            prior_stddev,
+            optimize_prior_mean,
+            optimize_prior_rho,
+            optimize_posterior_mean,
+            optimize_posterior_rho,
+            w_prior_mean_init=None,
+            b_prior_mean_init=None,
+            w_posterior_mean_init=None,
+            b_posterior_mean_init=None,
+            stride=(1, 1),
+            padding=(0, 0),
+            dilation=(1, 1),
+            groups=1,
+    ):
+        super(BayesianConv2d, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+        self.groups = groups
+        self.prior_stddev = prior_stddev
+        self.optimize_prior_mean = optimize_prior_mean
+        self.optimize_prior_rho = optimize_prior_rho
+        self.optimize_posterior_mean = optimize_posterior_mean
+        self.optimize_posterior_rho = optimize_posterior_rho
+
+        self.w_prior_mean = nn.Parameter(torch.Tensor(
+            out_channels, in_channels // groups, *kernel_size
+        ))
+        self.b_prior_mean = nn.Parameter(torch.Tensor(out_channels))
+
+        def w_mean_init_fn_(w_mean):
+            nn.init.kaiming_uniform_(w_mean, a=math.sqrt(5))
+
+        def b_mean_init_fn_(b_mean):
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.w_prior_mean)
+            bound = 1 / math.sqrt(fan_in)
+            nn.init.uniform_(b_mean, -bound, bound)
+
+        finish_init(self,
+                    w_prior_mean_init=w_prior_mean_init,
+                    b_prior_mean_init=b_prior_mean_init,
+                    w_posterior_mean_init=w_posterior_mean_init,
+                    b_posterior_mean_init=b_posterior_mean_init,
+                    w_mean_init_fn_=w_mean_init_fn_,
+                    b_mean_init_fn_=b_mean_init_fn_
+                    )
+        self.activation = None
+        if activation == 'relu':
+            self.activation = F.relu
+        elif activation == 'softmax':
+            self.activation = partial(F.softmax, dim=-1)
+        elif activation == 'maxpool':
+            self.activation = partial(F.max_pool2d, kernel_size=2, stride=2, padding=0)
+        else:
+            raise ValueError
+
+    def forward(self, x, mode):
+        assert mode in ['MAP', 'MC']
+
+        if mode == 'MAP':
+            return self.activation(F.conv2d(x, self.w_posterior_mean, self.b_posterior_mean,
+                                            self.stride, self.padding, self.dilation, self.groups))
+
+        w = perturb_parameter(self.w_posterior_mean, self.w_posterior_rho)
+        b = perturb_parameter(self.b_posterior_mean, self.b_posterior_rho)
+        z = self.activation(F.conv2d(x, w, b,
+                                     self.stride, self.padding, self.dilation, self.groups))
+
+        if mode == 'MC':
+            return z
+
+    def kl(self):
+        return layer_kl(
+            self.w_posterior_mean, self.w_posterior_rho, self.w_prior_mean, self.w_prior_rho,
+            self.b_posterior_mean, self.b_posterior_rho, self.b_prior_mean, self.b_prior_rho
+        )
 
 if __name__ == '__main__':
     def test_bayesian_linear():
@@ -195,6 +293,23 @@ if __name__ == '__main__':
         summary = [(name, p.shape, p.requires_grad) for name, p in bayesian_linear.named_parameters()]
         print(summary)
 
+    def test_bayesian_conv2d():
+        bayesian_conv2d = BayesianConv2d(
+            in_channels=1,
+            out_channels=20,
+            kernel_size=(5, 5),
+            activation='maxpool',
+            prior_stddev=0.003,
+            optimize_prior_mean=False,
+            optimize_prior_rho=False,
+            optimize_posterior_mean=True,
+            optimize_posterior_rho=True,
+        )
+        bayesian_conv2d = bayesian_conv2d.to(device)
+        x = torch.ones([3, 1, 28, 28]).to(device)
+        y = bayesian_conv2d(x, 'MC')
+        ipdb.set_trace()
+
 
     def test_kl():
         mean = torch.Tensor([3.0])
@@ -214,5 +329,6 @@ if __name__ == '__main__':
         print(kl.shape)
 
 
-    test_bayesian_linear()
+    # test_bayesian_linear()
+    test_bayesian_conv2d()
     # test_kl()

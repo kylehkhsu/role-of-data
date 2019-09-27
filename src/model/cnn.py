@@ -8,7 +8,7 @@ class LeNet(nn.Module):
     """https://github.com/anonymous-108794/nnet-compression/blob/master/nnet/models/lenet5.py"""
     def __init__(self, input_shape, n_output, *args, **kwargs):
         super(LeNet, self).__init__()
-        self.pad = nn.ZeroPad2d(padding=2)
+        assert len(input_shape) == 3
         self.pool = nn.MaxPool2d(
             kernel_size=2, stride=2, padding=0
         )
@@ -22,7 +22,6 @@ class LeNet(nn.Module):
 
         with torch.no_grad():
             x = torch.ones([1] + input_shape)
-            x = self.pad(x)
             for conv_layer in self.conv_layers:
                 x = self.pool(conv_layer(x))
             x = x.view(x.shape[0], -1)
@@ -37,7 +36,6 @@ class LeNet(nn.Module):
 
     def forward(self, x):
         assert x.dim() == 4
-        x = self.pad(x)
         for conv_layer in self.conv_layers:
             x = self.pool(conv_layer(x))
         x = x.view(x.shape[0], -1)
