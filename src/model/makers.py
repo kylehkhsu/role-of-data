@@ -12,7 +12,7 @@ def make_bayesian_mlp_classifier(
         optimize_prior_rho,
         optimize_posterior_mean,
         optimize_posterior_rho,
-        probability_threshold,
+        prob_threshold,
         normalize_surrogate_by_log_classes
 ):
     layers = []
@@ -53,7 +53,7 @@ def make_bayesian_mlp_classifier(
         )
     )
     return BayesianClassifier(
-        probability_threshold,
+        prob_threshold,
         normalize_surrogate_by_log_classes,
         *layers
     )
@@ -67,8 +67,9 @@ def make_bayesian_classifier_from_mlps(
         optimize_prior_rho,
         optimize_posterior_mean,
         optimize_posterior_rho,
-        probability_threshold,
-        normalize_surrogate_by_log_classes
+        prob_threshold,
+        normalize_surrogate_by_log_classes,
+        oracle_prior_variance
 ):
     posterior_mean_init_parameters = list(mlp_posterior_mean_init.parameters())
     prior_mean_parameters = list(mlp_prior_mean.parameters())
@@ -97,9 +98,10 @@ def make_bayesian_classifier_from_mlps(
             )
         )
     return BayesianClassifier(
-        probability_threshold,
-        normalize_surrogate_by_log_classes,
-        *layers
+        bayesian_layers=layers,
+        prob_threshold=prob_threshold,
+        normalize_surrogate_by_log_classes=normalize_surrogate_by_log_classes,
+        oracle_prior_variance=oracle_prior_variance
     )
 
 
@@ -111,8 +113,9 @@ def make_bayesian_classifier_from_lenets(
         optimize_prior_rho,
         optimize_posterior_mean,
         optimize_posterior_rho,
-        probability_threshold,
-        normalize_surrogate_by_log_classes
+        prob_threshold,
+        normalize_surrogate_by_log_classes,
+        oracle_prior_variance
 ):
     n_conv_layers = len(net_posterior_mean_init.conv_layers)
     n_linear_layers = len(net_posterior_mean_init.linear_layers)
@@ -163,7 +166,8 @@ def make_bayesian_classifier_from_lenets(
         )
 
     return BayesianClassifier(
-        probability_threshold,
-        normalize_surrogate_by_log_classes,
-        *bayesian_layers
+        bayesian_layers=bayesian_layers,
+        prob_threshold=prob_threshold,
+        normalize_surrogate_by_log_classes=normalize_surrogate_by_log_classes,
+        oracle_prior_variance=oracle_prior_variance
     )

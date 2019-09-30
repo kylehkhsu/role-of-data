@@ -22,17 +22,17 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='mnist')
-    parser.add_argument('--net_type', type=str, default='mlp',
+    parser.add_argument('--net_type', type=str, default='lenet',
                         help='mlp or lenet')
     parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
     parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600],
-                        help='affects mlp only and not lenet')
+                        help='affects mlp only')
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--alpha', type=float, default=0.7)
-    parser.add_argument('--learning_rate_prior_and_posterior_mean', type=float, default=1e-2)
-    parser.add_argument('--learning_rate_posterior_variance', type=float, default=0.01)
+    parser.add_argument('--learning_rate_prior_and_posterior_mean', type=float, default=0.03)
+    parser.add_argument('--learning_rate_posterior_variance', type=float, default=0.003)
     parser.add_argument('--momentum', type=float, default=0.95)
-    parser.add_argument('--prior_variance_init', type=float, default=0.003)
+    parser.add_argument('--prior_variance_init', type=float, default=0.0003)
     parser.add_argument('--oracle_prior_variance', type=int, default=0)
     parser.add_argument('--prob_threshold', type=float, default=1e-4)
     parser.add_argument('--delta', type=float, default=0.05)

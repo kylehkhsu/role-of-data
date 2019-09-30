@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from functools import partial
 import math
 import ipdb
+from abc import ABC, abstractmethod
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 inverse_softplus = lambda x: math.log(math.exp(x) - 1)
@@ -11,7 +12,12 @@ inverse_softplus = lambda x: math.log(math.exp(x) - 1)
 
 def kl_between_gaussians(p_mean, p_var, q_mean, q_var):
     """KL(p||q)"""
-    return 0.5 * ((q_var / p_var).log() + (p_var + (p_mean - q_mean).pow(2)) / q_var - 1)
+    return 0.5 * ((q_var / p_var).log() + (p_var + (p_mean - q_mean).pow(2)).div(q_var) - 1)
+
+
+def kl_between_gaussians_oracle_prior_variance(posterior_mean, posterior_rho, prior_mean):
+    posterior_var = F.softplus(posterior_rho).pow(2)
+    return 0.5 * (1 + (posterior_mean - prior_mean).pow(2).div(posterior_var)).log()
 
 
 def perturb_parameter(parameter_mean, parameter_rho):
@@ -34,6 +40,23 @@ def layer_kl(w_posterior_mean, w_posterior_rho, w_prior_mean, w_prior_rho,
         F.softplus(b_posterior_rho).pow(2),
         b_prior_mean,
         F.softplus(b_prior_rho).pow(2)
+    )
+    return w_kl.sum() + b_kl.sum()
+
+
+def layer_kl_oracle_prior_variance(
+        w_posterior_mean, w_posterior_rho, w_prior_mean,
+        b_posterior_mean, b_posterior_rho, b_prior_mean
+):
+    w_kl = kl_between_gaussians_oracle_prior_variance(
+        posterior_mean=w_posterior_mean,
+        posterior_rho=w_posterior_rho,
+        prior_mean=w_prior_mean
+    )
+    b_kl = kl_between_gaussians_oracle_prior_variance(
+        posterior_mean=b_posterior_mean,
+        posterior_rho=b_posterior_rho,
+        prior_mean=b_prior_mean
     )
     return w_kl.sum() + b_kl.sum()
 
@@ -177,8 +200,24 @@ class BayesianLinear(nn.Module):
 
     def kl(self):
         return layer_kl(
-            self.w_posterior_mean, self.w_posterior_rho, self.w_prior_mean, self.w_prior_rho,
-            self.b_posterior_mean, self.b_posterior_rho, self.b_prior_mean, self.b_prior_rho
+            w_posterior_mean=self.w_posterior_mean,
+            w_posterior_rho=self.w_posterior_rho,
+            w_prior_mean=self.w_prior_mean,
+            w_prior_rho=self.w_prior_rho,
+            b_posterior_mean=self.b_posterior_mean,
+            b_posterior_rho=self.b_posterior_rho,
+            b_prior_mean=self.b_prior_mean,
+            b_prior_rho=self.b_prior_rho
+        )
+
+    def kl_oracle_prior_variance(self):
+        return layer_kl_oracle_prior_variance(
+            w_posterior_mean=self.w_posterior_mean,
+            w_posterior_rho=self.w_posterior_rho,
+            w_prior_mean=self.w_prior_mean,
+            b_posterior_mean=self.b_posterior_mean,
+            b_posterior_rho=self.b_posterior_rho,
+            b_prior_mean=self.b_prior_mean,
         )
 
 
@@ -265,9 +304,26 @@ class BayesianConv2d(nn.Module):
 
     def kl(self):
         return layer_kl(
-            self.w_posterior_mean, self.w_posterior_rho, self.w_prior_mean, self.w_prior_rho,
-            self.b_posterior_mean, self.b_posterior_rho, self.b_prior_mean, self.b_prior_rho
+            w_posterior_mean=self.w_posterior_mean,
+            w_posterior_rho=self.w_posterior_rho,
+            w_prior_mean=self.w_prior_mean,
+            w_prior_rho=self.w_prior_rho,
+            b_posterior_mean=self.b_posterior_mean,
+            b_posterior_rho=self.b_posterior_rho,
+            b_prior_mean=self.b_prior_mean,
+            b_prior_rho=self.b_prior_rho
         )
+
+    def kl_oracle_prior_variance(self):
+        return layer_kl_oracle_prior_variance(
+            w_posterior_mean=self.w_posterior_mean,
+            w_posterior_rho=self.w_posterior_rho,
+            w_prior_mean=self.w_prior_mean,
+            b_posterior_mean=self.b_posterior_mean,
+            b_posterior_rho=self.b_posterior_rho,
+            b_prior_mean=self.b_prior_mean,
+        )
+
 
 if __name__ == '__main__':
     def test_bayesian_linear():

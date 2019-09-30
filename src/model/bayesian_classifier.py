@@ -16,15 +16,16 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class BayesianClassifier(nn.Module):
-    def __init__(self, min_prob, normalize_surrogate_by_log_classes, *bayesian_layers):
+    def __init__(self, bayesian_layers, prob_threshold, normalize_surrogate_by_log_classes, oracle_prior_variance):
         super(BayesianClassifier, self).__init__()
         for i_layer, layer in enumerate(bayesian_layers):
             self.add_module(f'bayesian_layer{i_layer}', layer)
 
         # TODO: test if 'layer' in name condition yields expected behavior
         self.bayesian_layers = [module for name, module in self.named_modules() if 'bayesian_layer' in name]
-        self.min_prob = min_prob
+        self.prob_threshold = prob_threshold
         self.normalize_surrogate_by_log_classes = normalize_surrogate_by_log_classes
+        self.oracle_prior_variance = oracle_prior_variance
 
     def forward(self, x, mode):
         for layer in self.bayesian_layers:
@@ -40,7 +41,7 @@ class BayesianClassifier(nn.Module):
             surrogate = BayesianClassifier.surrogate(
                 probs=probs,
                 y=y,
-                min_prob=self.min_prob,
+                prob_threshold=self.prob_threshold,
                 normalize_surrogate_by_log_classes=self.normalize_surrogate_by_log_classes
             ).mean()
 
@@ -52,13 +53,16 @@ class BayesianClassifier(nn.Module):
     def kl(self):
         net_kl = 0.0
         for layer in self.bayesian_layers:
-            net_kl += layer.kl()
+            if self.oracle_prior_variance:
+                net_kl += layer.kl_oracle_prior_variance()
+            else:
+                net_kl += layer.kl()
         return net_kl
 
     @staticmethod
-    def surrogate(probs, y, min_prob, normalize_surrogate_by_log_classes):
+    def surrogate(probs, y, prob_threshold, normalize_surrogate_by_log_classes):
         y = y.view([y.shape[0], -1])
-        log_likelihood = probs.gather(1, y).clamp(min=min_prob, max=1).log()
+        log_likelihood = probs.gather(1, y).clamp(min=prob_threshold, max=1).log()
         surrogate = -log_likelihood
         if normalize_surrogate_by_log_classes:
             n_classes = probs.shape[-1]
@@ -105,7 +109,7 @@ class BayesianClassifier(nn.Module):
                 surrogate_batch = BayesianClassifier.surrogate(
                     probs=probs,
                     y=y,
-                    min_prob=self.min_prob,
+                    prob_threshold=self.prob_threshold,
                     normalize_surrogate_by_log_classes=self.normalize_surrogate_by_log_classes
                 )
                 corrects += correct.item()

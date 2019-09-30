@@ -87,7 +87,6 @@ def main(args):
             dataset=train_set_alpha,
             batch_size=config.batch_size,
             shuffle=True,
-            drop_last=True,
             num_workers=2
         )
         train_loader_eval_alpha = data.DataLoader(
@@ -99,7 +98,6 @@ def main(args):
         dataset=train_set_not_alpha,
         batch_size=config.batch_size,
         shuffle=True,
-        drop_last=True,
         num_workers=2
     )
     train_loader_eval_not_alpha = data.DataLoader(
