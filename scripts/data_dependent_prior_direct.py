@@ -67,6 +67,20 @@ def main(args):
             transform=torchvision.transforms.ToTensor(),
             download=True
         )
+    elif config.dataset == 'fashion_mnist':
+        train_set = torchvision.datasets.FashionMNIST(
+            root=config.dataset_path,
+            train=True,
+            transform=torchvision.transforms.ToTensor(),
+            download=True
+        )
+        test_set = torchvision.datasets.FashionMNIST(
+            root=config.dataset_path,
+            train=False,
+            transform=torchvision.transforms.ToTensor(),
+            download=True
+        )
+
     else:
         raise ValueError
 
