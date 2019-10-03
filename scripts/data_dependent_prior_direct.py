@@ -21,13 +21,16 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, default='mnist')
+    parser.add_argument('--net_type', type=str, default='mlp',
+                        help='mlp or lenet')
     parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
+    parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600]*3)
+    parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--alpha', type=float, default=0.1)
     parser.add_argument('--learning_rate_prior', type=float, default=1e-2)
     parser.add_argument('--learning_rate_posterior', type=float, default=0.00001)
     parser.add_argument('--momentum', type=float, default=0.95)
-    parser.add_argument('--batch_size', type=int, default=256)
-    parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600] * 3)
     parser.add_argument('--n_epoch_prior', type=int, default=100)
     parser.add_argument('--n_epoch_posterior', type=int, default=256)
     parser.add_argument('--prior_variance_init', type=float, default=1e-7)
@@ -35,9 +38,7 @@ def parse_args():
     parser.add_argument('--delta', type=float, default=0.05)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--dataset', type=str, default='mnist')
-    parser.add_argument('--net_type', type=str, default='mlp',
-                        help='mlp or lenet')
+
     return parser.parse_args()
 
 
@@ -82,6 +83,7 @@ def main(args):
         f'train_set_size_not_alpha: {train_set_size_not_alpha}'
     )
 
+    train_loader_alpha, train_loader_eval_alpha = None, None
     if config.alpha != 0:
         train_loader_alpha = data.DataLoader(
             dataset=train_set_alpha,
@@ -139,6 +141,7 @@ def main(args):
     classifier_posterior_mean_init = None
 
     if config.alpha != 0:
+        assert train_loader_alpha is not None and train_loader_eval_alpha is not None
         for i_epoch in tqdm(range(config.n_epoch_prior)):
             log = train_classifier_epoch(
                 classifier=classifier,
@@ -175,8 +178,9 @@ def main(args):
             optimize_prior_rho=False,
             optimize_posterior_mean=True,
             optimize_posterior_rho=True,
-            probability_threshold=config.prob_threshold,
-            normalize_surrogate_by_log_classes=True
+            prob_threshold=config.prob_threshold,
+            normalize_surrogate_by_log_classes=True,
+            oracle_prior_variance=False
         )
     elif config.net_type == 'lenet':
         bayesian_classifier = make_bayesian_classifier_from_lenets(
@@ -187,8 +191,9 @@ def main(args):
             optimize_prior_rho=False,
             optimize_posterior_mean=True,
             optimize_posterior_rho=True,
-            probability_threshold=config.prob_threshold,
-            normalize_surrogate_by_log_classes=True
+            prob_threshold=config.prob_threshold,
+            normalize_surrogate_by_log_classes=True,
+            oracle_prior_variance=False
         )
     else:
         raise ValueError

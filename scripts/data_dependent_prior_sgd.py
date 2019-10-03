@@ -209,6 +209,7 @@ def main(args):
         num_workers=2,
     )
 
+    train_loader_alpha, train_loader_eval_alpha = None, None
     if config.alpha != 0:
         # S_alpha
         train_loader_alpha = data.DataLoader(
@@ -269,6 +270,7 @@ def main(args):
 
     # train for one epoch on S_alpha; coupling
     if config.alpha != 0:
+        assert train_loader_alpha is not None and train_loader_eval_alpha is not None
         print('optimizing posterior and prior means for one epoch of S_alpha')
         log = train_classifier_epoch(
             classifier=classifier_posterior_mean,
@@ -283,6 +285,12 @@ def main(args):
 
     # coupling
     classifier_prior_mean = deepcopy(classifier_posterior_mean).to(device)
+    optimizer_prior_mean = torch.optim.SGD(
+        classifier_prior_mean.parameters(),
+        lr=config.learning_rate_prior_and_posterior_mean,
+        momentum=config.momentum
+    )
+    optimizer_prior_mean.load_state_dict(optimizer_posterior_mean.state_dict())
 
     # for the posterior mean, finish off the epoch of S with S \ S_alpha
     print('optimizing posterior mean for one epoch of S \\ S_alpha')
@@ -321,15 +329,13 @@ def main(args):
     print(f'l2 distance between trained posterior mean and initial prior mean: {l2_between_mlps(classifier_posterior_mean.net,classifier_prior_mean.net)}')
     print(f'l2 distance between initial posterior mean and initial prior mean: {l2_between_mlps(classifier_posterior_mean_init.net, classifier_prior_mean.net)}')
 
-    optimizer_prior_mean = torch.optim.SGD(
-        classifier_prior_mean.parameters(),
-        lr=config.learning_rate_prior_and_posterior_mean,
-        momentum=config.momentum
-    )
+
     l2_closest = float('inf')
     classifier_prior_mean_closest = deepcopy(classifier_prior_mean)
     i_epoch_closest = 0
     if config.alpha != 0:
+        assert train_loader_alpha is not None and train_loader_eval_alpha is not None
+
         for i_epoch in tqdm(range(1, config.n_epoch_prior_mean)):
             log = train_classifier_epoch(
                 classifier=classifier_prior_mean,
