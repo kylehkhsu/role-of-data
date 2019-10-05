@@ -1,0 +1,23 @@
+# testing resnet20 on cifar10, sweeping optimization hyperparameters
+name: exp030
+program: scripts/tests/test_resnet20.py
+method: grid
+parameters:
+  dataset:
+    value: cifar10
+  net_type:
+    value: resnet20
+  batch_size:
+    values: [128, 256]
+  learning_rate:
+    values: [!!float 1e-1, !!float 1e-3, !!float 1e-2,
+             !!float 3e-4, !!float 3e-3, !!float 3e-2
+    ]
+  momentum:
+    values: [0.95, 0.90, 0.99]
+  weight_decay:
+    values: [0, !!float 1e-4, !!float 5e-4, !!float 1e-3]
+  n_epoch:
+    value: 256
+  seed:
+    value: 42
