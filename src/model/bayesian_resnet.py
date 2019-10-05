@@ -265,6 +265,7 @@ class BayesianResNetClassifier(nn.Module):
         self.prob_threshold = prob_threshold
         self.normalize_surrogate_by_log_classes = normalize_surrogate_by_log_classes
         self.bayesian_layers = self._find_bayesian_layers()
+        self.inverted_kl_bound = BayesianClassifier.inverted_kl_bound
 
     def forward(self, x, mode):
         return self.net(x, mode)
@@ -337,17 +338,21 @@ if __name__ == '__main__':
         posterior_conv = nn.Conv2d(3, 5, 3, 1, 1, bias=False)
 
         bayesian_conv = BayesianConv2d(prior_conv, posterior_conv, 0.01,
-                                       False, False, True, True)
+                                       False, False, True, True).to(device)
 
         assert bayesian_conv.prior_mean.weight.requires_grad is False
 
         prior_linear = nn.Linear(784, 200, bias=True)
         posterior_linear = nn.Linear(784, 200, bias=True)
 
-        bayesian_linear = BayesianLinear(prior_linear, posterior_linear, 0.01, False, False, True, True).to(device)
+        bayesian_linear = BayesianLinear(prior_linear, posterior_linear, 1e-5, False, False, True, True).to(device)
         x = torch.ones(3, 784).to(device)
-        y1 = bayesian_linear(x)
-        y2 = bayesian_linear(x)
+        y1 = bayesian_linear(x, 'MC')
+        y2 = bayesian_linear(x, 'MC')
+
+
+        perturbed_parameters = bayesian_linear.perturb_posterior()
+        ipdb.set_trace()
 
 
     def test_bayesian_resnet():
@@ -404,4 +409,6 @@ if __name__ == '__main__':
         ipdb.set_trace()
 
 
-    test_bayesian_resnet()
+    # test_bayesian_resnet()
+
+    test_bayesian_layers()

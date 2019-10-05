@@ -1,14 +1,16 @@
 import torch
 import torchvision
+import torchvision.transforms as transforms
 import torch.utils.data as data
 import argparse
 import numpy as np
 import ipdb
 from scripts.data_dependent_prior_sgd import train_classifier_epoch, train_bayesian_classifier_epoch
 from src.model.mlp import MLP
-from src.model.cnn import LeNet
+from src.model.cnn import LeNet, resnet20
 from src.model.classifier import Classifier
 from src.model.makers import make_bayesian_classifier_from_mlps, make_bayesian_classifier_from_lenets
+from src.model.bayesian_resnet import BayesianResNet, BayesianResNetClassifier
 from tqdm import tqdm
 import pprint
 from copy import deepcopy
@@ -23,7 +25,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='mnist')
     parser.add_argument('--net_type', type=str, default='mlp',
-                        help='mlp or lenet')
+                        help='mlp or lenet or resnet20')
     parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
     parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600]*3)
     parser.add_argument('--batch_size', type=int, default=256)
@@ -80,7 +82,27 @@ def main(args):
             transform=torchvision.transforms.ToTensor(),
             download=True
         )
-
+    elif config.dataset == 'cifar10':
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+        train_set = torchvision.datasets.CIFAR10(
+            root=config.dataset_path,
+            train=True,
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ]),
+            download=True
+        )
+        test_set = torchvision.datasets.CIFAR10(
+            root=config.dataset_path,
+            train=False,
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ]),
+            download=True
+        )
     else:
         raise ValueError
 
@@ -138,6 +160,8 @@ def main(args):
             input_shape=[1, 28, 28],
             n_output=10
         )
+    elif config.net_type == 'resnet20':
+        net = resnet20()
     else:
         raise ValueError
 
@@ -174,7 +198,7 @@ def main(args):
             log.update({'prior_training_epoch': i_epoch})
             pp.pprint(log)
 
-            if log['error_train'] < 1e-5:
+            if log['error_train'] < 1e-6:
                 break
 
     classifier_prior_mean = classifier.to('cpu')
@@ -205,6 +229,22 @@ def main(args):
             optimize_prior_rho=False,
             optimize_posterior_mean=True,
             optimize_posterior_rho=True,
+            prob_threshold=config.prob_threshold,
+            normalize_surrogate_by_log_classes=True,
+            oracle_prior_variance=False
+        )
+    elif config.net_type == 'resnet20':
+        bayesian_resnet = BayesianResNet(
+            resnet_prior_mean=classifier_prior_mean.net,
+            resnet_posterior_mean=classifier_posterior_mean_init.net,
+            prior_stddev=math.sqrt(config.prior_variance_init),
+            optimize_prior_mean=False,
+            optimize_prior_rho=False,
+            optimize_posterior_mean=True,
+            optimize_posterior_rho=True,
+        )
+        bayesian_classifier = BayesianResNetClassifier(
+            bayesian_net=bayesian_resnet,
             prob_threshold=config.prob_threshold,
             normalize_surrogate_by_log_classes=True,
             oracle_prior_variance=False
