@@ -36,7 +36,7 @@ class BayesianClassifier(nn.Module):
         running_kl = 0.0
         running_surrogate = 0.0
         for i in range(n_samples):
-            probs = self(x, 'MC')
+            probs = self.forward(x, 'MC')
             kl = self.kl()
             surrogate = BayesianClassifier.surrogate(
                 probs=probs,

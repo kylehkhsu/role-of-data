@@ -54,9 +54,9 @@ __all__ = ['ResNet', 'resnet20', 'resnet32', 'resnet44', 'resnet56', 'resnet110'
 
 def _weights_init(m):
     classname = m.__class__.__name__
-    print(classname)
+    # print(classname)
     if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-        nn.init.kaiming_normal(m.weight)
+        nn.init.kaiming_normal_(m.weight)
 
 
 class LambdaLayer(nn.Module):
@@ -102,6 +102,7 @@ class BasicBlock(nn.Module):
 
 
 class ResNet(nn.Module):
+    """adapted from https://github.com/akamaster/pytorch_resnet_cifar10"""
     def __init__(self, block, num_blocks, num_classes=10):
         super(ResNet, self).__init__()
         self.in_planes = 16
@@ -182,4 +183,4 @@ if __name__ == "__main__":
         test(globals()['resnet20']())
 
 
-    test_resnet()
+    # test_resnet()

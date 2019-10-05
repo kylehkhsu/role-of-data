@@ -284,6 +284,8 @@ class BayesianConv2d(nn.Module):
             self.activation = partial(F.softmax, dim=-1)
         elif activation == 'maxpool':
             self.activation = partial(F.max_pool2d, kernel_size=2, stride=2, padding=0)
+        elif activation == 'identity':
+            self.activation = nn.Identity()
         else:
             raise ValueError
 
