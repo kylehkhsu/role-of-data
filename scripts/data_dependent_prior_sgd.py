@@ -1,3 +1,6 @@
+import sys
+
+sys.path.insert(1, './')
 import torch
 import torch.utils.data as data
 import argparse
@@ -10,6 +13,7 @@ import math
 import os
 from src.util import device, get_dataset, train_classifier_epoch, train_bayesian_classifier_epoch, make_classifier, \
     make_bayesian_classifier
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -45,7 +49,6 @@ def l2_between_mlps(mlp1, mlp2):
 
 
 def main(args):
-
     pp = pprint.PrettyPrinter()
     wandb.init(project="pacbayes_opt",
                dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior_sgd/debug',
@@ -76,7 +79,7 @@ def main(args):
     # S but with large batch size; for use in eval (no gradients)
     train_loader_eval_all = data.DataLoader(
         dataset=train_set,
-        batch_size=len(train_set)//10,
+        batch_size=len(train_set) // 10,
         num_workers=2,
     )
 
@@ -180,10 +183,12 @@ def main(args):
         if log['error_train'] <= config.posterior_mean_stopping_error_train:
             break
 
-    print(f'l2 distance between trained posterior mean and initial posterior mean: {l2_between_mlps(classifier_posterior_mean.net, classifier_posterior_mean_init.net)}')
-    print(f'l2 distance between trained posterior mean and initial prior mean: {l2_between_mlps(classifier_posterior_mean.net,classifier_prior_mean.net)}')
-    print(f'l2 distance between initial posterior mean and initial prior mean: {l2_between_mlps(classifier_posterior_mean_init.net, classifier_prior_mean.net)}')
-
+    print('l2 distance between trained posterior mean and initial posterior mean:',
+          f'{l2_between_mlps(classifier_posterior_mean.net, classifier_posterior_mean_init.net)}')
+    print('l2 distance between trained posterior mean and initial prior mean:',
+          f'{l2_between_mlps(classifier_posterior_mean.net, classifier_prior_mean.net)}')
+    print(f'l2 distance between initial posterior mean and initial prior mean:',
+          f'{l2_between_mlps(classifier_posterior_mean_init.net, classifier_prior_mean.net)}')
 
     l2_closest = float('inf')
     classifier_prior_mean_closest = deepcopy(classifier_prior_mean)

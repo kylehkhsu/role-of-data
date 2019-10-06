@@ -1,3 +1,6 @@
+import sys
+
+sys.path.insert(1, './')
 import torch
 import torch.utils.data as data
 import argparse
@@ -10,8 +13,6 @@ import os
 from src.util import device, get_dataset, train_classifier_epoch, train_bayesian_classifier_epoch, make_classifier, \
     make_bayesian_classifier
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -19,7 +20,7 @@ def parse_args():
     parser.add_argument('--net_type', type=str, default='mlp',
                         help='mlp or lenet or resnet20')
     parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
-    parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600]*3)
+    parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600] * 3)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--alpha', type=float, default=0.1)
     parser.add_argument('--learning_rate_prior', type=float, default=1e-2)
