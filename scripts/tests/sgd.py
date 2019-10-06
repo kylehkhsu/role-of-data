@@ -3,10 +3,9 @@ import torchvision
 import torch.utils.data as data
 import argparse
 import numpy as np
-import ipdb
-from src.model.mlp import MLP
+from src.model.base.mlp import MLP
 from src.model.cnn import LeNet
-from src.model.classifier import Classifier
+from src.model.base.classifier import Classifier
 from src.model.makers import make_bayesian_classifier_from_mlps, make_bayesian_classifier_from_lenets
 from tqdm import tqdm
 import pprint

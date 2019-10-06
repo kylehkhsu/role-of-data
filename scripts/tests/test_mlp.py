@@ -4,15 +4,10 @@ import torch.utils.data as data
 import argparse
 import numpy as np
 import ipdb
-from src.model.classifier import Classifier
-from src.model.cnn import LeNet
-from src.model.mlp import MLP
-from src.model.pacbayes_by_backprop import make_bmlp_from_mlps, BMLP
+from src.model.base.classifier import Classifier
+from src.model.base.mlp import MLP
 from tqdm import tqdm
 import pprint
-from copy import deepcopy
-import math
-import os
 
 pp = pprint.PrettyPrinter()
 

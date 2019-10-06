@@ -4,18 +4,12 @@ import torchvision.transforms as transforms
 import torch.utils.data as data
 import argparse
 import numpy as np
-import ipdb
-from scripts.data_dependent_prior_sgd import train_classifier_epoch, train_bayesian_classifier_epoch
-from src.model.mlp import MLP
-from src.model.cnn import LeNet, resnet20
-from src.model.classifier import Classifier
-from src.model.makers import make_bayesian_classifier_from_mlps, make_bayesian_classifier_from_lenets
+from scripts.data_dependent_prior_sgd import train_classifier_epoch
+from src.model.cnn import resnet20
+from src.model.base.classifier import Classifier
 from tqdm import tqdm
 import pprint
-from copy import deepcopy
 import wandb
-import math
-import os
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
