@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from copy import deepcopy
 import ipdb
-from src.model.bayesian_layers import inverse_softplus, kl_between_gaussians
+from src.model.bayesian_layers import inverse_softplus, kl_between_gaussians, kl_between_gaussians_oracle_prior_variance
 from src.model.cnn import BasicBlock
 from src.model.bayesian_classifier import BayesianClassifier
 from src.model.classifier import Classifier
@@ -84,6 +84,14 @@ class BayesianLayer(nn.Module):
             p_var=var_of_rho(parameter_vectors['posterior_rho']),
             q_mean=parameter_vectors['prior_mean'],
             q_var=var_of_rho(parameter_vectors['prior_rho'])
+        ).sum()
+
+    def kl_oracle_prior_variance(self):
+        parameter_vectors = self.extract_parameters()
+        return kl_between_gaussians_oracle_prior_variance(
+            posterior_mean=parameter_vectors['posterior_mean'],
+            posterior_rho=parameter_vectors['posterior_rho'],
+            prior_mean=parameter_vectors['prior_mean']
         ).sum()
 
 
@@ -258,7 +266,7 @@ class BayesianResNetClassifier(nn.Module):
             bayesian_net,
             prob_threshold,
             normalize_surrogate_by_log_classes=True,
-            **kwargs
+            oracle_prior_variance=False
     ):
         super().__init__()
         self.net = bayesian_net
@@ -266,6 +274,7 @@ class BayesianResNetClassifier(nn.Module):
         self.normalize_surrogate_by_log_classes = normalize_surrogate_by_log_classes
         self.bayesian_layers = self._find_bayesian_layers()
         self.inverted_kl_bound = BayesianClassifier.inverted_kl_bound
+        self.oracle_prior_variance = oracle_prior_variance
 
     def forward(self, x, mode):
         return self.net(x, mode)
@@ -316,7 +325,10 @@ class BayesianResNetClassifier(nn.Module):
     def kl(self):
         kl = 0.0
         for layer in self.bayesian_layers:
-            kl += layer.kl()
+            if self.oracle_prior_variance:
+                kl += layer.kl_oracle_prior_variance()
+            else:
+                kl += layer.kl()
         return kl
 
     def _find_bayesian_layers(self):
@@ -352,7 +364,6 @@ if __name__ == '__main__':
 
 
         perturbed_parameters = bayesian_linear.perturb_posterior()
-        ipdb.set_trace()
 
 
     def test_bayesian_resnet():
@@ -399,7 +410,8 @@ if __name__ == '__main__':
         bayesian_classifier = BayesianResNetClassifier(
             bayesian_net=bayesian_resnet,
             prob_threshold=1e-4,
-            normalize_surrogate_by_log_classes=True
+            normalize_surrogate_by_log_classes=True,
+            oracle_prior_variance=True
         ).to(device)
 
         assert bayesian_classifier.kl() == 0
@@ -409,6 +421,6 @@ if __name__ == '__main__':
         ipdb.set_trace()
 
 
-    # test_bayesian_resnet()
+    test_bayesian_resnet()
 
-    test_bayesian_layers()
+    # test_bayesian_layers()

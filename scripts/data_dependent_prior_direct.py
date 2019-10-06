@@ -5,7 +5,7 @@ import torch.utils.data as data
 import argparse
 import numpy as np
 import ipdb
-from scripts.data_dependent_prior_sgd import train_classifier_epoch, train_bayesian_classifier_epoch
+from scripts.data_dependent_prior_sgd import train_classifier_epoch, train_bayesian_classifier_epoch, get_dataset
 from src.model.mlp import MLP
 from src.model.cnn import LeNet, resnet20
 from src.model.classifier import Classifier
@@ -55,56 +55,7 @@ def main(args):
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
 
-    if config.dataset == 'mnist':
-        train_set = torchvision.datasets.MNIST(
-            root=config.dataset_path,
-            train=True,
-            transform=torchvision.transforms.ToTensor(),
-            download=True
-        )
-
-        test_set = torchvision.datasets.MNIST(
-            root=config.dataset_path,
-            train=False,
-            transform=torchvision.transforms.ToTensor(),
-            download=True
-        )
-    elif config.dataset == 'fashion_mnist':
-        train_set = torchvision.datasets.FashionMNIST(
-            root=config.dataset_path,
-            train=True,
-            transform=torchvision.transforms.ToTensor(),
-            download=True
-        )
-        test_set = torchvision.datasets.FashionMNIST(
-            root=config.dataset_path,
-            train=False,
-            transform=torchvision.transforms.ToTensor(),
-            download=True
-        )
-    elif config.dataset == 'cifar10':
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                         std=[0.229, 0.224, 0.225])
-        train_set = torchvision.datasets.CIFAR10(
-            root=config.dataset_path,
-            train=True,
-            transform=transforms.Compose([
-                transforms.ToTensor(),
-                normalize,
-            ]),
-            download=True
-        )
-        test_set = torchvision.datasets.CIFAR10(
-            root=config.dataset_path,
-            train=False,
-            transform=transforms.Compose([
-                transforms.ToTensor(),
-                normalize,
-            ]),
-            download=True
-        )
-    else:
-        raise ValueError
+    train_set, test_set = get_dataset(config)
 
     train_set_size = len(train_set)
     train_set_size_alpha = int(config.alpha * train_set_size)

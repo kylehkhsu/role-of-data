@@ -5,15 +5,17 @@ import argparse
 import numpy as np
 import ipdb
 from src.model.mlp import MLP
-from src.model.cnn import LeNet
+from src.model.cnn import LeNet, resnet20
 from src.model.classifier import Classifier
 from src.model.makers import make_bayesian_classifier_from_mlps, make_bayesian_classifier_from_lenets
+from src.model.bayesian_resnet import BayesianResNet, BayesianResNetClassifier
 from tqdm import tqdm
 import pprint
 from copy import deepcopy
 import wandb
 import math
 import os
+import torchvision.transforms as transforms
 
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -40,7 +42,7 @@ def parse_args():
     parser.add_argument('--n_epoch_posterior_mean', type=int, default=256)
     parser.add_argument('--n_epoch_posterior_variance', type=int, default=256)
     parser.add_argument('--n_epoch_prior_mean', type=int, default=256)
-    parser.add_argument('--prior_mean_patience', type=int, default=3)
+    parser.add_argument('--prior_mean_patience', type=int, default=5)
     parser.add_argument('--posterior_mean_stopping_error_train', type=float, default=0.02)
 
     return parser.parse_args()
@@ -139,23 +141,7 @@ def train_bayesian_classifier_epoch(
     return log
 
 
-def l2_between_mlps(mlp1, mlp2):
-    mlp1_vector = torch.cat([p.view(-1) for p in mlp1.parameters() if p.requires_grad])
-    mlp2_vector = torch.cat([p.view(-1) for p in mlp2.parameters() if p.requires_grad])
-    return (mlp1_vector - mlp2_vector).norm()
-
-
-def main(args):
-
-    pp = pprint.PrettyPrinter()
-    wandb.init(project="pacbayes_opt",
-               dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior_sgd/debug',
-               tags=['debug'])
-    config = wandb.config
-    config.update(args)
-    torch.manual_seed(config.seed)
-    np.random.seed(config.seed)
-
+def get_dataset(config):
     if config.dataset == 'mnist':
         train_set = torchvision.datasets.MNIST(
             root=config.dataset_path,
@@ -182,9 +168,51 @@ def main(args):
             transform=torchvision.transforms.ToTensor(),
             download=True
         )
-
+    elif config.dataset == 'cifar10':
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+        train_set = torchvision.datasets.CIFAR10(
+            root=config.dataset_path,
+            train=True,
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ]),
+            download=True
+        )
+        test_set = torchvision.datasets.CIFAR10(
+            root=config.dataset_path,
+            train=False,
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ]),
+            download=True
+        )
     else:
         raise ValueError
+
+    return train_set, test_set
+    
+
+def l2_between_mlps(mlp1, mlp2):
+    mlp1_vector = torch.cat([p.view(-1) for p in mlp1.parameters() if p.requires_grad])
+    mlp2_vector = torch.cat([p.view(-1) for p in mlp2.parameters() if p.requires_grad])
+    return (mlp1_vector - mlp2_vector).norm()
+
+
+def main(args):
+
+    pp = pprint.PrettyPrinter()
+    wandb.init(project="pacbayes_opt",
+               dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior_sgd/debug',
+               tags=['debug'])
+    config = wandb.config
+    config.update(args)
+    torch.manual_seed(config.seed)
+    np.random.seed(config.seed)
+
+    train_set, test_set = get_dataset(config)
 
     train_set_size_all = len(train_set)
     train_set_size_alpha = int(config.alpha * train_set_size_all)
@@ -254,6 +282,8 @@ def main(args):
             input_shape=[1, 28, 28],
             n_output=10
         )
+    elif config.net_type == 'resnet20':
+        net_posterior_mean = resnet20()
     else:
         raise ValueError
     classifier_posterior_mean = Classifier(
@@ -389,9 +419,24 @@ def main(args):
             normalize_surrogate_by_log_classes=True,
             oracle_prior_variance=config.oracle_prior_variance
         )
+    elif config.net_type == 'resnet20':
+        bayesian_resnet = BayesianResNet(
+            resnet_prior_mean=classifier_prior_mean_closest.net,
+            resnet_posterior_mean=classifier_posterior_mean.net,
+            prior_stddev=math.sqrt(config.prior_variance_init),
+            optimize_prior_mean=False,
+            optimize_prior_rho=False,
+            optimize_posterior_mean=False,
+            optimize_posterior_rho=True,
+        )
+        bayesian_classifier = BayesianResNetClassifier(
+            bayesian_net=bayesian_resnet,
+            prob_threshold=config.prob_threshold,
+            normalize_surrogate_by_log_classes=True,
+            oracle_prior_variance=config.oracle_prior_variance
+        )
     else:
         raise ValueError
-
     bayesian_classifier = bayesian_classifier.to(device)
     optimizer_posterior_variance = torch.optim.SGD(
         bayesian_classifier.parameters(),
