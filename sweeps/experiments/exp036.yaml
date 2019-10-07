@@ -10,7 +10,7 @@ parameters:
   net_type:
     value: mlp
   hidden_layer_sizes:
-    value: 600,600,600
+    values: ['600,600,600',  '600,600']
   batch_size:
     value: 256
   learning_rate_prior:
