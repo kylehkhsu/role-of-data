@@ -131,4 +131,4 @@ if __name__ == "__main__":
     def test_resnet():
         test(globals()['resnet20']())
 
-    # test_resnet()
+    test_resnet()

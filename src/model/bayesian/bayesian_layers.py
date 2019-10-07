@@ -7,7 +7,6 @@ import ipdb
 from abc import ABC, abstractmethod
 from copy import deepcopy
 
-
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
@@ -32,6 +31,10 @@ def common_entries(*dcts):
 
 def var_of_rho(rho):
     return F.softplus(rho).pow(2)
+
+
+def rho_of_var(var):
+    return var.sqrt().exp().sub(1).log()
 
 
 class BayesianLayer(nn.Module):
@@ -59,6 +62,12 @@ class BayesianLayer(nn.Module):
             for rho_layer in [self.prior_rho, self.posterior_rho]:
                 for p in rho_layer.parameters():
                     nn.init.constant_(p, inverse_softplus(self.prior_stddev))
+
+            # # TODO: remove after debugging
+            # for posterior_rho_p, prior_mean_p, posterior_mean_p in zip(self.posterior_rho.parameters(),
+            #                                                            self.prior_mean.parameters(),
+            #                                                            self.posterior_mean.parameters()):
+            #     posterior_rho_p.copy_(rho_of_var(0.5 * (prior_mean_p - posterior_mean_p).pow(2)))
 
             # set requires_grad appropriately
             for (optimize, layer) in zip([optimize_prior_mean,
@@ -182,7 +191,6 @@ class BayesianBatchNorm2d(BayesianLayer):
 
 
 if __name__ == '__main__':
-
     def test_bayesian_layers():
         prior_conv = nn.Conv2d(3, 5, 3, 1, 1, bias=False)
         posterior_conv = nn.Conv2d(3, 5, 3, 1, 1, bias=False)

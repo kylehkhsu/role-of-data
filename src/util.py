@@ -11,6 +11,7 @@ from src.model.bayesian.bayesian_mlp import BayesianMLP
 from src.model.bayesian.bayesian_lenet import BayesianLeNet
 from src.model.bayesian.bayesian_resnet import BayesianResNet
 from src.model.bayesian.bayesian_classifier import BayesianClassifier
+import ipdb
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -119,10 +120,10 @@ def train_bayesian_classifier_epoch(
     for x, y in tqdm(train_loader, total=train_set_size // config.batch_size):
         x, y = x.to(device), y.to(device)
 
-        kl, surrogate = bayesian_classifier.forward_train(x, y)
+        surrogate = bayesian_classifier.forward_train(x, y)
         surrogate_bound = bayesian_classifier.inverted_kl_bound(
             risk=surrogate,
-            kl=kl,
+            kl=bayesian_classifier.kl(),
             dataset_size=train_set_size,
             delta=config.delta
         )
@@ -164,11 +165,16 @@ def train_bayesian_classifier_epoch(
 
 def make_classifier(config):
     if config.net_type == 'mlp':
+        assert type(config.hidden_layer_sizes) is str
+        hidden_layer_sizes = config.hidden_layer_sizes.split(',')
+        hidden_layer_sizes = list(filter(None, hidden_layer_sizes))
+        hidden_layer_sizes = [int(h) for h in hidden_layer_sizes]
         net = MLP(
             n_input=784,
             n_output=10,
-            hidden_layer_sizes=config.hidden_layer_sizes
+            hidden_layer_sizes=hidden_layer_sizes
         )
+
     elif config.net_type == 'lenet':
         net = LeNet(
             input_shape=[1, 28, 28],

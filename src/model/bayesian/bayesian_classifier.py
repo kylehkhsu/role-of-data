@@ -30,11 +30,9 @@ class BayesianClassifier(nn.Module):
         return self.net(x, mode)
 
     def forward_train(self, x, y, n_samples=1):
-        running_kl = 0.0
         running_surrogate = 0.0
         for i in range(n_samples):
             probs = self.forward(x, 'MC')
-            kl = self.kl()
             surrogate = BayesianClassifier.surrogate(
                 probs=probs,
                 y=y,
@@ -42,12 +40,11 @@ class BayesianClassifier(nn.Module):
                 normalize_surrogate_by_log_classes=self.normalize_surrogate_by_log_classes
             ).mean()
 
-            running_kl += kl
             running_surrogate += surrogate
 
-        return running_kl / n_samples, running_surrogate / n_samples
+        return running_surrogate / n_samples
 
-    def evaluate_on_loader(self, loader):
+    def evaluate_on_loader(self, loader, n_samples=100):
         training = self.training
         self.eval()
 
@@ -55,17 +52,21 @@ class BayesianClassifier(nn.Module):
         with torch.no_grad():
             for x, y in loader:
                 x, y = x.to(device), y.to(device)
-                probs = self(x, 'MC')
-                correct, total = Classifier.evaluate(probs, y)
-                surrogate_batch = BayesianClassifier.surrogate(
-                    probs=probs,
-                    y=y,
-                    prob_threshold=self.prob_threshold,
-                    normalize_surrogate_by_log_classes=self.normalize_surrogate_by_log_classes
-                )
-                corrects += correct.item()
-                totals += total.item()
-                surrogates += surrogate_batch.sum().item()
+                for i in range(n_samples):
+                    probs = self(x, 'MC')
+                    correct, total = Classifier.evaluate(probs, y)
+                    surrogate_batch = BayesianClassifier.surrogate(
+                        probs=probs,
+                        y=y,
+                        prob_threshold=self.prob_threshold,
+                        normalize_surrogate_by_log_classes=self.normalize_surrogate_by_log_classes
+                    )
+                    corrects += correct.item()
+                    totals += total.item()
+                    surrogates += surrogate_batch.sum().item()
+        corrects /= n_samples
+        totals /= n_samples
+        surrogates /= n_samples
         error = 1 - corrects / totals
         surrogate = surrogates / totals
 

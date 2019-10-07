@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument('--net_type', type=str, default='mlp',
                         help='mlp or lenet')
     parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
-    parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600],
+    parser.add_argument('--hidden_layer_sizes', type=str, default='600,'*3,
                         help='affects mlp only and not lenet')
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--alpha', type=float, default=0.7)
@@ -38,6 +38,7 @@ def parse_args():
     parser.add_argument('--n_epoch_prior_mean', type=int, default=256)
     parser.add_argument('--prior_mean_patience', type=int, default=5)
     parser.add_argument('--posterior_mean_stopping_error_train', type=float, default=0.02)
+    parser.add_argument('--bound_optimization_patience', type=int, default=10)
 
     return parser.parse_args()
 
@@ -52,7 +53,7 @@ def main(args):
     pp = pprint.PrettyPrinter()
     wandb.init(project="pacbayes_opt",
                dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior_sgd/debug',
-               tags=['debug'])
+               tags=['sgd'])
     config = wandb.config
     config.update(args)
     torch.manual_seed(config.seed)
@@ -240,12 +241,10 @@ def main(args):
         momentum=config.momentum
     )
 
-    error, surrogate = bayesian_classifier.evaluate_on_loader(train_loader_all)
-    pp.pprint('bayesian classifier evaluation')
-    pp.pprint({'error_train': error, 'surrogate_train': surrogate})
-
     pp.pprint('bayesian classifier bound optimization')
-    for _ in tqdm(range(config.n_epoch_posterior_variance)):
+    error_bound_best = float('inf')
+    i_epoch_best = 0
+    for i_epoch in tqdm(range(config.n_epoch_posterior_variance)):
         log = train_bayesian_classifier_epoch(
             bayesian_classifier=bayesian_classifier,
             optimizer=optimizer_posterior_variance,
@@ -255,11 +254,20 @@ def main(args):
             test_loader=test_loader,
             config=config
         )
+        log.update({'epoch': i_epoch})
 
         wandb.log(log)
         pp.pprint(log)
 
-    torch.save(bayesian_classifier.state_dict(), os.path.join(wandb.run.dir, 'model.pt'))
+        if log['error_bound'] < error_bound_best:
+            error_bound_best = log['error_bound']
+            i_epoch_best = i_epoch
+            for key in log.keys():
+                wandb.run.summary[key] = log[key]
+            torch.save(bayesian_classifier.state_dict(), os.path.join(wandb.run.dir, 'model.pt'))
+
+        if i_epoch - i_epoch_best >= config.bound_optimization_patience:
+            break
 
 
 if __name__ == '__main__':

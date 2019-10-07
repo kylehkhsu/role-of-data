@@ -21,6 +21,9 @@ class MLP(nn.Module):
             self.hidden_layers.append(layer)
             n_in = hidden_layer_sizes[i]
         self.output_layer = nn.Linear(n_in, n_output, bias=True)
+        with torch.no_grad():
+            nn.init.normal_(self.output_layer.weight, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
+            nn.init.normal_(self.output_layer.bias, mean=0, std=0.1).clamp_(min=-0.2, max=0.2)
 
     def forward(self, x):
         x = x.view([x.shape[0], -1])

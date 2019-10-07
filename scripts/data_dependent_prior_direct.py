@@ -20,19 +20,19 @@ def parse_args():
     parser.add_argument('--net_type', type=str, default='mlp',
                         help='mlp or lenet or resnet20')
     parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
-    parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600] * 3)
+    parser.add_argument('--hidden_layer_sizes', type=str, default='600,'*3)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--alpha', type=float, default=0.1)
     parser.add_argument('--learning_rate_prior', type=float, default=1e-2)
     parser.add_argument('--learning_rate_posterior', type=float, default=0.00001)
     parser.add_argument('--momentum', type=float, default=0.95)
-    parser.add_argument('--n_epoch_prior', type=int, default=100)
+    parser.add_argument('--n_epoch_prior', type=int, default=256)
     parser.add_argument('--n_epoch_posterior', type=int, default=256)
     parser.add_argument('--prior_variance_init', type=float, default=1e-7)
     parser.add_argument('--prob_threshold', type=float, default=1e-4)
     parser.add_argument('--delta', type=float, default=0.05)
-    parser.add_argument('--debug', action='store_true')
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--bound_optimization_patience', type=int, default=10)
 
     return parser.parse_args()
 
@@ -41,7 +41,7 @@ def main(args):
     pp = pprint.PrettyPrinter()
     wandb.init(project="pacbayes_opt",
                dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior/',
-               tags=['debug'])
+               tags=['direct'])
     config = wandb.config
     config.update(args)
 
@@ -149,7 +149,9 @@ def main(args):
         momentum=config.momentum
     )
 
-    for _ in tqdm(range(config.n_epoch_posterior)):
+    error_bound_best = float('inf')
+    i_epoch_best = 0
+    for i_epoch in tqdm(range(config.n_epoch_posterior)):
         log = train_bayesian_classifier_epoch(
             bayesian_classifier=bayesian_classifier,
             optimizer=optimizer_posterior,
@@ -159,11 +161,20 @@ def main(args):
             test_loader=test_loader,
             config=config
         )
+        log.update({'epoch': i_epoch})
 
         wandb.log(log)
         pp.pprint(log)
 
-    torch.save(bayesian_classifier.state_dict(), os.path.join(wandb.run.dir, 'model.pt'))
+        if log['error_bound'] < error_bound_best:
+            error_bound_best = log['error_bound']
+            i_epoch_best = i_epoch
+            for key in log.keys():
+                wandb.run.summary[key] = log[key]
+            torch.save(bayesian_classifier.state_dict(), os.path.join(wandb.run.dir, 'model.pt'))
+
+        if i_epoch - i_epoch_best >= config.bound_optimization_patience:
+            break
 
 
 if __name__ == '__main__':

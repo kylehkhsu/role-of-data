@@ -1,0 +1,4 @@
+Creating sweep from: sweeps/final/test.yaml
+Create sweep with ID: avnx0rnx
+Sweep URL: https://app.wandb.ai/kylehsu/pacbayes_opt/sweeps/avnx0rnx
+

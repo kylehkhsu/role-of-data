@@ -10,7 +10,7 @@ class BayesianMLP(nn.Module):
 
         self.hidden_layers = nn.ModuleList()
         for hidden_layer_prior_mean, hidden_layer_posterior_mean in zip(mlp_prior_mean.hidden_layers,
-                                                                        mlp_posterior_mean.hidden_layer):
+                                                                        mlp_posterior_mean.hidden_layers):
             self.hidden_layers.append(
                 BayesianLinear(
                     prior_mean=hidden_layer_prior_mean,

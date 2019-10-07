@@ -28,7 +28,7 @@ bayesian_classifier = BayesianClassifier(
     oracle_prior_variance=True
 )
 
-bayesian_classifier.load_state_dict(torch.load('./data/wandb/dyndga4c/model.pt'))
+bayesian_classifier.load_state_dict(torch.load('./data/wandb/run-20191007_004434-cmtk7zi2/model.pt'))
 
 list_of_dict_of_params = [l.extract_parameters() for l in bayesian_classifier.bayesian_layers]
 prior_mean = torch.cat([d['prior_mean'] for d in list_of_dict_of_params])
@@ -37,9 +37,10 @@ posterior_rho = torch.cat([d['posterior_rho'] for d in list_of_dict_of_params])
 posterior_var = F.softplus(posterior_rho).pow(2).detach().numpy()
 squared_l2 = (posterior_mean - prior_mean).pow(2).detach().numpy()
 
-plt.scatter(posterior_var, squared_l2)
+plt.scatter(posterior_var, squared_l2, alpha=0.3, s=3)
 plt.xlabel('posterior_variance')
 plt.ylabel('squared l2')
-plt.xlim(0.00099, 0.00101)
+plt.xlim(posterior_var.min(), posterior_var.max())
+plt.ylim(0, squared_l2.max())
 plt.gca().ticklabel_format(style='sci', scilimits=(0, 0))
 plt.savefig('./output/fashion_mnist_lenet_sgd_oracle_model.png')
