@@ -7,6 +7,8 @@ parameters:
     values: [0, 0.1, 0.2, 0.5, 0.7, 0.9]
   dataset:
     value: mnist
+  dataset_path:
+    value: '/home/waseem/gitrepos/pacbayes_opt/data_dependent_prior_sgd/debug'
   net_type:
     value: mlp
   hidden_layer_sizes:
