@@ -52,7 +52,6 @@ def l2_between_mlps(mlp1, mlp2):
 def main(args):
     pp = pprint.PrettyPrinter()
     wandb.init(project="pacbayes_opt",
-               dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior_sgd/debug',
                tags=['sgd'])
     config = wandb.config
     config.update(args)
@@ -80,7 +79,7 @@ def main(args):
     # S but with large batch size; for use in eval (no gradients)
     train_loader_eval_all = data.DataLoader(
         dataset=train_set,
-        batch_size=len(train_set) // 10,
+        batch_size=len(train_set) // 100,
         num_workers=2,
     )
 
@@ -95,7 +94,7 @@ def main(args):
         )
         train_loader_eval_alpha = data.DataLoader(
             dataset=train_set_alpha,
-            batch_size=train_set_size_alpha // 10,
+            batch_size=train_set_size_alpha // 100,
             num_workers=2
         )
 
@@ -108,7 +107,7 @@ def main(args):
     )
     train_loader_eval_not_alpha = data.DataLoader(
         dataset=train_set_not_alpha,
-        batch_size=train_set_size_not_alpha // 10,
+        batch_size=train_set_size_not_alpha // 100,
         num_workers=2
     )
 
