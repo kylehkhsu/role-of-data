@@ -1,8 +1,8 @@
 image: images.borgy.elementai.net/kyle-image:latest
 name: Kyle-code
 restart: on-interruption
-reqCores: 200
-reqGpus: 50
+reqCores: 96
+reqGpus: 16
 reqRamGbytes: 32
 volumes:
 - /home/waseem/gitrepos/pacbayes_opt/:/home/waseem/gitrepos/pacbayes_opt/
