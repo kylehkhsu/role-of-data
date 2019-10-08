@@ -12,6 +12,8 @@ with open('./scripts/tests/wandb.txt', 'r') as f:
 
 dump = ''
 for yaml in yamls:
+    if 'net_type-mlp' not in yaml:
+        continue
     sweep_msg = os.popen(f'wandb sweep {yaml}').read()
 
     p = re.compile('.*Create sweep with ID: (\w+)\n.*', re.DOTALL)
@@ -25,5 +27,5 @@ for yaml in yamls:
 
     # os.popen(f'srun --mem=12G -c 8 --gres=gpu:1 -p p100 wandb agent {id}')
 
-with open('./scripts/final.sh', 'w+') as f:
+with open('./scripts/sgd_mnist_mlp_final.sh', 'w+') as f:
     f.write(dump)
