@@ -44,7 +44,7 @@ class BayesianClassifier(nn.Module):
 
         return running_surrogate / n_samples
 
-    def evaluate_on_loader(self, loader, n_samples=100):
+    def evaluate_on_loader(self, loader, n_samples=10):
         training = self.training
         self.eval()
 
