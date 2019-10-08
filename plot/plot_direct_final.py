@@ -62,8 +62,8 @@ else:
 
 df['error_bound'] = df['error_bound'].clip(upper=1)
 
-colors = ['tab:orange', 'tab:blue', 'tab:green']
-markers = ['o', 'v', 's']
+colors = ['tab:orange', 'tab:blue', 'tab:green', 'tab:purple']
+markers = ['o', 'v', 's', 'D']
 plt.rcParams.update({'font.size': 16, 'font.family': 'serif'})
 
 fig = plt.figure()
@@ -71,24 +71,26 @@ fig.set_size_inches(w=10, h=6, forward=True)
 fig.set_dpi(100)
 ax = plt.gca()
 
-datasets = ['cifar10', 'fashion_mnist', 'mnist']
-for dataset, c, m in zip(datasets, colors[:len(datasets)], markers[:len(datasets)]):
+datasets_and_net_types = [('cifar10', 'resnet20'), ('fashion_mnist', 'lenet'), ('mnist', 'mlp'), ('mnist', 'lenet')]
+for (dataset, net_type), c, m in zip(datasets_and_net_types, colors[:len(datasets_and_net_types)], markers[:len(datasets_and_net_types)]):
 
-    df_d = df.loc[df['dataset'] == dataset]
-    net_type = df_d.iloc[0]['net_type']
-    gb = df_d.groupby(['alpha'])['error_bound']
+    df_dn = df.loc[(df['dataset'] == dataset) & (df['net_type'] == net_type)]
+    gb = df_dn.groupby(['alpha'])['error_bound']
     mean = gb.mean()
     std = gb.std()
+    print(mean)
 
     ax.plot(mean.index, mean, linestyle='-', color=c, marker=m, markersize=10, label=f'{dataset}, {net_type}')
     ax.fill_between(mean.index, mean - 2 * std, mean + 2 * std, alpha=0.2, color=c)
 
-    gb = df_d.groupby(['alpha'])['error_test']
+    gb = df_dn.groupby(['alpha'])['error_test']
     mean = gb.mean()
     std = gb.std()
 
     ax.plot(mean.index, mean, linestyle='--', color=c, marker=m, markersize=10)
     ax.fill_between(mean.index, mean - 2 * std, mean + 2 * std, alpha=0.2, color=c)
+
+    print(mean)
 
 ax.set_xticks([0, 0.1, 0.2, 0.5, 0.7, 0.9, 0.98])
 ax.set_ylabel('0-1 error')
