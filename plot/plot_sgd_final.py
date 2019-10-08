@@ -70,25 +70,24 @@ for o in [0, 1]:
     markers = ['o', 'v', 's']
     plt.rcParams.update({'font.size': 16, 'font.family': 'serif'})
 
-    for dataset in ['mnist', 'fashion_mnist']:
+    for dataset, net_type in [('mnist', 'lenet'), ('mnist', 'mlp'), ('fashion_mnist', 'lenet')]:
         fig = plt.figure()
         fig.set_size_inches(w=10, h=6, forward=True)
         fig.set_dpi(100)
         ax = plt.gca()
 
-        df_d = df_o.loc[df['dataset'] == dataset]
-        net_type = df_d.iloc[0]['net_type']
-        ps = np.sort(df_d['posterior_mean_stopping_error_train'].unique())
+        df_dn = df_o.loc[(df['dataset'] == dataset) & (df['net_type'] == net_type)]
+        ps = np.sort(df_dn['posterior_mean_stopping_error_train'].unique())
         for p, c, m in zip(ps, colors[:len(ps)], markers[:len(ps)]):
-            df_d_p = df_d.loc[df_d['posterior_mean_stopping_error_train'] == p]
-            gb = df_d_p.groupby(['alpha'])['error_bound']
+            df_p = df_dn.loc[df_dn['posterior_mean_stopping_error_train'] == p]
+            gb = df_p.groupby(['alpha'])['error_bound']
             mean = gb.mean()
             std = gb.std()
 
             ax.plot(mean.index, mean, linestyle='-', color=c, marker=m, markersize=10, label=f'{p:.3f}')
             ax.fill_between(mean.index, mean - 2 * std, mean + 2 * std, alpha=0.2, color=c)
 
-            gb = df_d_p.groupby(['alpha'])['error_test']
+            gb = df_p.groupby(['alpha'])['error_test']
             mean = gb.mean()
             std = gb.std()
 
