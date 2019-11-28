@@ -7,19 +7,18 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dry', type=int, default=1)
 args = parser.parse_args()
 
-yamls = os.popen('ls ./sweeps/final').read()
+yamls = os.popen('ls ./sweeps/rebuttal').read()
 yamls = yamls.split('\n')
 yamls = list(filter(None, yamls))
-yamls = [os.path.join('./sweeps/final', yaml) for yaml in yamls]
+yamls = [os.path.join('./sweeps/rebuttal', yaml) for yaml in yamls]
 
 with open('./scripts/tests/wandb.txt', 'r') as f:
     wandb = f.read()
 
-dump = ''
+dump = '#!/usr/bin/env bash\n'
 count = 0
 for yaml in yamls:
-    if 'ghost_sgd' not in yaml and 'half_sgd' not in yaml and \
-            not ('direct' in yaml and 'mlp' in yaml):
+    if 'mlp' not in yaml:
         continue
     count += 1
     print(yaml)
@@ -38,5 +37,5 @@ for yaml in yamls:
     # os.popen(f'srun --mem=12G -c 8 --gres=gpu:1 -p p100 wandb agent {id}')
 print(f'count: {count}')
 if not args.dry:
-    with open('./scripts/mnist_ghost_half_direct-mlp_final.sh', 'w+') as f:
+    with open('./scripts/rebuttal_sgd_mlp.sh', 'w+') as f:
         f.write(dump)

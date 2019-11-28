@@ -1,5 +1,4 @@
 .idea/
 wandb/
 wandb_sweep.sh
-data/
-output/
+./output/

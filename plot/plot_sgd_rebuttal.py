@@ -51,13 +51,10 @@ if not os.path.isfile(f'./data/{experiment_type}.json') or args.redo:
     ]
     series_list = []
     for run in tqdm(runs):
-        try:
-            config = run.config
-            series = extract_summary_from_history(run, 'error_bound').append(pd.Series({key: get_value(config, key)
-                                                                                        for key in config_keys}))
-            series_list.append(series)
-        except:
-            continue
+        config = run.config
+        series = extract_summary_from_history(run, 'error_bound').append(pd.Series({key: get_value(config, key)
+                                                                                    for key in config_keys}))
+        series_list.append(series)
 
     df = pd.DataFrame(series_list)
 
@@ -66,6 +63,7 @@ else:
     df = pd.read_json(f'./data/{experiment_type}.json')
 
 df['error_bound'] = df['error_bound'].clip(upper=1)
+# for o in [0, 1]:
 for o in [0]:
     df_o = df.loc[df['oracle_prior_variance'] == o]
 

@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument('--net_type', type=str, default='mlp',
                         help='mlp or lenet')
     parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
-    parser.add_argument('--hidden_layer_sizes', type=str, default='600,'*3,
+    parser.add_argument('--hidden_layer_sizes', type=str, default='600,'*2,
                         help='affects mlp only and not lenet')
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--alpha', type=float, default=0.7)
