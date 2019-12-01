@@ -2,12 +2,15 @@ import wandb_summarizer.download
 import ipdb
 import wandb
 import yaml
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--dry', type=int, default=1)
+args = parser.parse_args()
 
 exclude_keys = [
     '_wandb',
     'wandb_version',
     'debug',
-    # 'hidden_layer_sizes',
     'dataset_path'
 ]
 
@@ -21,14 +24,14 @@ def get_value(config, key):
 
 
 api = wandb.Api()
-experiment_type = 'sgd'
+experiment_type = 'direct'
 runs = api.runs(
     'kylehsu/pacbayes_opt',
     {
         '$and': [
             {'tags': 'best'},
             {'tags': experiment_type},
-            {'config.net_type': 'mlp'}
+            {'config.dataset': 'cifar10'}
         ]
     }
 )
@@ -42,8 +45,13 @@ for run in runs:
     net_type = get_value(run_config, 'net_type')
     alpha = get_value(run_config, 'alpha')
     dataset = get_value(run_config, 'dataset')
-    posterior_mean_stopping_error_train = get_value(run_config, 'posterior_mean_stopping_error_train')
-    sweep_name = f"exp-{experiment_type}__dataset-{dataset}__alpha-{alpha:.1f}__net_type-{net_type}__posterior_mean_stopping_error_train-{posterior_mean_stopping_error_train}"
+    if net_type != 'mlp':
+        _ = config['parameters'].pop('hidden_layer_sizes', None)
+    if alpha not in [0.2, 0.5]:
+        continue
+    # posterior_mean_stopping_error_train = get_value(run_config, 'posterior_mean_stopping_error_train')
+    sweep_name = f"exp-{experiment_type}__dataset-{dataset}__alpha-{alpha:.2f}__net_type-{net_type}"
+    # sweep_name = f"exp-{experiment_type}__dataset-{dataset}__alpha-{alpha:.1f}__net_type-{net_type}__posterior_mean_stopping_error_train-{posterior_mean_stopping_error_train}"
     file_name = f"./sweeps/rebuttal/{sweep_name}.yaml"
     config.update({
         'name': sweep_name,
@@ -51,8 +59,9 @@ for run in runs:
         'method': 'grid',
     })
 
-    with open(file_name, 'w') as f:
-        yaml.dump(config, f)
+    if not args.dry:
+        with open(file_name, 'w') as f:
+            yaml.dump(config, f)
     print(file_name)
 
 # n_seeds = 10

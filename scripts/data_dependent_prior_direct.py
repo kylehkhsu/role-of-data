@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument('--prob_threshold', type=float, default=1e-4)
     parser.add_argument('--delta', type=float, default=0.05)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--bound_optimization_patience', type=int, default=10)
+    parser.add_argument('--bound_optimization_patience', type=int, default=5)
 
     return parser.parse_args()
 

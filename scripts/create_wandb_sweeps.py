@@ -18,7 +18,9 @@ with open('./scripts/tests/wandb.txt', 'r') as f:
 dump = '#!/usr/bin/env bash\n'
 count = 0
 for yaml in yamls:
-    if 'mlp' not in yaml:
+    if 'dataset-cifar' in yaml or 'exp-direct' not in yaml:
+        continue
+    if 'alpha-0.95' not in yaml and 'alpha-0.98' not in yaml:
         continue
     count += 1
     print(yaml)
@@ -37,5 +39,5 @@ for yaml in yamls:
     # os.popen(f'srun --mem=12G -c 8 --gres=gpu:1 -p p100 wandb agent {id}')
 print(f'count: {count}')
 if not args.dry:
-    with open('./scripts/rebuttal_sgd_mlp.sh', 'w+') as f:
+    with open('./scripts/rebuttal_direct_high_alpha.sh', 'w+') as f:
         f.write(dump)
