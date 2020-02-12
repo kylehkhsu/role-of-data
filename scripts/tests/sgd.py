@@ -23,7 +23,7 @@ def parse_args():
     parser.add_argument('--dataset', type=str, default='mnist')
     parser.add_argument('--net_type', type=str, default='lenet',
                         help='mlp or lenet')
-    parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
+    parser.add_argument('--dataset_path', type=str, default='/tmp/datasets')
     parser.add_argument('--hidden_layer_sizes', type=list, nargs='+', default=[600],
                         help='affects mlp only')
     parser.add_argument('--batch_size', type=int, default=256)
@@ -148,7 +148,7 @@ def main(args):
 
     pp = pprint.PrettyPrinter()
     wandb.init(project="pacbayes_opt",
-               dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior_sgd/debug',
+               dir='/tmp/output/pacbayes_opt/data_dependent_prior_sgd/debug',
                tags=['debug'])
     config = wandb.config
     config.update(args)

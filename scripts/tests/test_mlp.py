@@ -14,7 +14,7 @@ pp = pprint.PrettyPrinter()
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
+parser.add_argument('--dataset_path', type=str, default='/tmp/datasets')
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--learning_rate', type=float, default=1e-2)
 parser.add_argument('--momentum', type=float, default=0.95)

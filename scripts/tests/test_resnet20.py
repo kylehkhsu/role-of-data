@@ -18,7 +18,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='cifar10')
     parser.add_argument('--net_type', type=str, default='resnet20')
-    parser.add_argument('--dataset_path', type=str, default='/h/kylehsu/datasets')
+    parser.add_argument('--dataset_path', type=str, default='/tmp/datasets')
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--learning_rate', type=float, default=0.01)
     parser.add_argument('--momentum', type=float, default=0.95)
@@ -33,7 +33,7 @@ def parse_args():
 def main(args):
     pp = pprint.PrettyPrinter()
     wandb.init(project="pacbayes_opt",
-               dir='/scratch/hdd001/home/kylehsu/output/pacbayes_opt/data_dependent_prior/',
+               dir='/tmp/output/pacbayes_opt/data_dependent_prior/',
                tags=['debug'])
     config = wandb.config
     config.update(args)
