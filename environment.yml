@@ -1,4 +1,4 @@
-name: pytorch1.2
+name: pacbayes-opt
 channels:
   - pytorch
   - conda-forge
@@ -94,5 +94,4 @@ dependencies:
     - wandb==0.8.10
     - wandb-summarizer==0.1.2
     - watchdog==0.9.0
-prefix: /tmp/.conda/envs/pytorch1.2
 

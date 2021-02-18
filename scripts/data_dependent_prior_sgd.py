@@ -18,17 +18,17 @@ from src.util import device, get_dataset, train_classifier_epoch, train_bayesian
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='mnist')
-    parser.add_argument('--net_type', type=str, default='mlp',
+    parser.add_argument('--net_type', type=str, default='lenet',
                         help='mlp or lenet')
-    parser.add_argument('--dataset_path', type=str, default='/tmp/datasets')
+    parser.add_argument('--dataset_path', type=str, default='./data')
     parser.add_argument('--hidden_layer_sizes', type=str, default='600,'*2,
                         help='affects mlp only and not lenet')
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--alpha', type=float, default=0.7)
     parser.add_argument('--learning_rate_prior_and_posterior_mean', type=float, default=3e-3)
-    parser.add_argument('--learning_rate_posterior_variance', type=float, default=3e-5)
+    parser.add_argument('--learning_rate_posterior_variance', type=float, default=3e-4)
     parser.add_argument('--momentum', type=float, default=0.95)
-    parser.add_argument('--prior_variance_init', type=float, default=0.003)
+    parser.add_argument('--prior_variance_init', type=float, default=0.0003)
     parser.add_argument('--oracle_prior_variance', type=int, default=0)
     parser.add_argument('--prob_threshold', type=float, default=1e-4)
     parser.add_argument('--delta', type=float, default=0.05)
@@ -36,8 +36,8 @@ def parse_args():
     parser.add_argument('--n_epoch_posterior_mean', type=int, default=256)
     parser.add_argument('--n_epoch_posterior_variance', type=int, default=256)
     parser.add_argument('--n_epoch_prior_mean', type=int, default=256)
-    parser.add_argument('--prior_mean_patience', type=int, default=5)
-    parser.add_argument('--posterior_mean_stopping_error_train', type=float, default=0.02)
+    parser.add_argument('--prior_mean_patience', type=int, default=3)
+    parser.add_argument('--posterior_mean_stopping_error_train', type=float, default=0.03)
     parser.add_argument('--bound_optimization_patience', type=int, default=10)
 
     return parser.parse_args()
