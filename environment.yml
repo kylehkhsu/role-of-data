@@ -1,4 +1,4 @@
-name: pacbayes-opt
+name: role-of-data
 channels:
   - pytorch
   - conda-forge

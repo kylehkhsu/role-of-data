@@ -147,8 +147,8 @@ def l2_between_mlps(mlp1, mlp2):
 def main(args):
 
     pp = pprint.PrettyPrinter()
-    wandb.init(project="pacbayes_opt",
-               dir='/tmp/output/pacbayes_opt/data_dependent_prior_sgd/debug',
+    wandb.init(project="role-of-data",
+               dir='/tmp/output/role_of_data/data_dependent_prior_sgd/debug',
                tags=['debug'])
     config = wandb.config
     config.update(args)

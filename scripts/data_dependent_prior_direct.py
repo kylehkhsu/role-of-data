@@ -39,7 +39,7 @@ def parse_args():
 
 def main(args):
     pp = pprint.PrettyPrinter()
-    wandb.init(project="pacbayes_opt",
+    wandb.init(project="role-of-data",
                tags=['direct'])
     config = wandb.config
     config.update(args)

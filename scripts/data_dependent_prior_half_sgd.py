@@ -51,7 +51,7 @@ def l2_between_mlps(mlp1, mlp2):
 
 def main(args):
     pp = pprint.PrettyPrinter()
-    wandb.init(project="pacbayes_opt",
+    wandb.init(project="role-of-data",
                tags=['half_sgd'])
     config = wandb.config
     config.update(args)

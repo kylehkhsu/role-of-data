@@ -2,10 +2,10 @@
 
 ### Installation
 ```
-git clone https://github.com/kylehkhsu/pacbayes-opt
-cd pacbayes-opt
+git clone https://github.com/kylehkhsu/role-of-data
+cd role-of-data
 conda env create -f environment.yml
-conda activate pacbayes-opt
+conda activate role-of-data
 ```
 
 ### Login to Weights & Biases
